@@ -1,0 +1,324 @@
+package astro
+
+/*
+#cgo CFLAGS: -I${SRCDIR}/../../../swisseph_build/include
+#cgo LDFLAGS: -L${SRCDIR}/../../../swisseph_build/lib -lswe -lm
+#include "swephexp.h"
+*/
+import "C"
+
+import (
+	"context"
+	"sort"
+	"time"
+	"unsafe"
+)
+
+type Calculator struct {
+	ephePath string
+	cPath    *C.char
+}
+
+func NewCalculator(ephePath string) *Calculator {
+	cPath := C.CString(ephePath)
+	C.swe_set_ephe_path(cPath)
+	return &Calculator{
+		ephePath: ephePath,
+		cPath:    cPath,
+	}
+}
+
+func (c *Calculator) Close() {
+	if c.cPath != nil {
+		C.free(unsafe.Pointer(c.cPath))
+		c.cPath = nil
+	}
+	C.swe_close()
+}
+
+func GetPlanetName(id int) string {
+	names := map[int]string{
+		0: "Sun", 1: "Moon", 2: "Mercury", 3: "Venus", 4: "Mars",
+		5: "Jupiter", 6: "Saturn", 7: "Uranus", 8: "Neptune", 9: "Pluto",
+		10: "Mean Node", 12: "Lilith",
+	}
+	return names[id]
+}
+
+// GetPlanetIDs возвращает список ID планет для расчетов
+func GetPlanetIDs() []int {
+	return []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12}
+}
+
+// ComputeNatal выполняет натальный расчет
+func (c *Calculator) ComputeNatal(ctx context.Context, t time.Time, lat, lon float64, hsys string) (*AstroResult, error) {
+	var dret [2]C.double
+	C.swe_utc_to_jd(
+		C.int(t.Year()), C.int(int(t.Month())), C.int(t.Day()),
+		C.int(t.Hour()), C.int(t.Minute()), C.double(t.Second()),
+		C.SE_GREG_CAL,
+		&dret[0],
+		nil,
+	)
+	tjdUt := dret[1]
+
+	var houses [13]C.double
+	var ascmc [10]C.double
+	var serr [256]C.char
+
+	cHsys := C.int(hsys[0])
+	C.swe_houses(tjdUt, C.double(lat), C.double(lon), cHsys, (*C.double)(unsafe.Pointer(&houses)), (*C.double)(unsafe.Pointer(&ascmc)))
+
+	var housesList []House
+	for i := 1; i <= 12; i++ {
+		housesList = append(housesList, House{
+			Number:    i,
+			Longitude: float64(houses[i]),
+		})
+	}
+
+	armc := ascmc[2]
+	var eps [6]C.double
+
+	C.swe_calc_ut(tjdUt, C.SE_ECL_NUT, C.SEFLG_SWIEPH, (*C.double)(unsafe.Pointer(&eps)), (*C.char)(unsafe.Pointer(&serr)))
+
+	var planetsList []Position
+	var xx [6]C.double
+
+	for _, id := range GetPlanetIDs() {
+		name := GetPlanetName(id)
+		if flags := C.swe_calc_ut(tjdUt, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr))); flags >= 0 {
+			lonPlan := float64(xx[0])
+			houseNum := C.swe_house_pos(armc, C.double(lat), eps[0], cHsys, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr)))
+
+			planetsList = append(planetsList, Position{
+				ID:        id,
+				Name:      name,
+				Longitude: lonPlan,
+				Latitude:  float64(xx[1]),
+				Speed:     float64(xx[3]),
+				House:     int(houseNum),
+			})
+		}
+	}
+
+	sort.Slice(planetsList, func(i, j int) bool {
+		return planetsList[i].ID < planetsList[j].ID
+	})
+
+	var aspectsList []Aspect
+	for i := 0; i < len(planetsList); i++ {
+		for j := i + 1; j < len(planetsList); j++ {
+			p1 := planetsList[i]
+			p2 := planetsList[j]
+
+			if name, _, exactDiff, isAspect := CalculateAspect(p1.Longitude, p2.Longitude); isAspect {
+				aspectsList = append(aspectsList, Aspect{
+					Planet1ID: p1.ID,
+					Planet2ID: p2.ID,
+					Planet1:   p1.Name,
+					Planet2:   p2.Name,
+					Type:      name,
+					Degree:    exactDiff,
+					Orb:       exactDiff,
+				})
+			}
+		}
+	}
+
+	sort.Slice(aspectsList, func(i, j int) bool {
+		if aspectsList[i].Planet1ID == aspectsList[j].Planet1ID {
+			return aspectsList[i].Planet2ID < aspectsList[j].Planet2ID
+		}
+		return aspectsList[i].Planet1ID < aspectsList[j].Planet1ID
+	})
+
+	return &AstroResult{
+		Type:      "natal",
+		Timestamp: t,
+		Planets:   planetsList,
+		Houses:    housesList,
+		Aspects:   aspectsList,
+	}, nil
+}
+
+// ComputeSynastry выполняет расчет совместимости
+func (c *Calculator) ComputeSynastry(ctx context.Context, t1, t2 time.Time, lat1, lon1 float64, hsys string) (*AstroResult, error) {
+	var dret1, dret2 [2]C.double
+	C.swe_utc_to_jd(C.int(t1.Year()), C.int(int(t1.Month())), C.int(t1.Day()), C.int(t1.Hour()), C.int(t1.Minute()), C.double(t1.Second()), C.SE_GREG_CAL, &dret1[0], nil)
+	C.swe_utc_to_jd(C.int(t2.Year()), C.int(int(t2.Month())), C.int(t2.Day()), C.int(t2.Hour()), C.int(t2.Minute()), C.double(t2.Second()), C.SE_GREG_CAL, &dret2[0], nil)
+	tjdUt1 := dret1[1]
+	tjdUt2 := dret2[1]
+
+	var houses [13]C.double
+	var ascmc [10]C.double
+	var serr [256]C.char
+	cHsys := C.int(hsys[0])
+	C.swe_houses(tjdUt1, C.double(lat1), C.double(lon1), cHsys, (*C.double)(unsafe.Pointer(&houses)), (*C.double)(unsafe.Pointer(&ascmc)))
+
+	var housesList []House
+	for i := 1; i <= 12; i++ {
+		housesList = append(housesList, House{Number: i, Longitude: float64(houses[i])})
+	}
+
+	armc1 := ascmc[2]
+	var eps1 [6]C.double
+	C.swe_calc_ut(tjdUt1, C.SE_ECL_NUT, C.SEFLG_SWIEPH, (*C.double)(unsafe.Pointer(&eps1)), (*C.char)(unsafe.Pointer(&serr)))
+
+	var planetsA []Position
+	var xx [6]C.double
+
+	for _, id := range GetPlanetIDs() {
+		name := GetPlanetName(id)
+		if flags := C.swe_calc_ut(tjdUt1, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr))); flags >= 0 {
+			houseNum := C.swe_house_pos(armc1, C.double(lat1), eps1[0], cHsys, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr)))
+			planetsA = append(planetsA, Position{
+				ID:        id,
+				Name:      name,
+				Longitude: float64(xx[0]),
+				Latitude:  float64(xx[1]),
+				Speed:     float64(xx[3]),
+				House:     int(houseNum),
+			})
+		}
+	}
+
+	var planetsB []Position
+	for _, id := range GetPlanetIDs() {
+		name := GetPlanetName(id)
+		if flags := C.swe_calc_ut(tjdUt2, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr))); flags >= 0 {
+			houseNum := C.swe_house_pos(armc1, C.double(lat1), eps1[0], cHsys, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr)))
+			planetsB = append(planetsB, Position{
+				ID:        id,
+				Name:      name,
+				Longitude: float64(xx[0]),
+				Latitude:  float64(xx[1]),
+				Speed:     float64(xx[3]),
+				House:     int(houseNum),
+			})
+		}
+	}
+
+	sort.Slice(planetsA, func(i, j int) bool { return planetsA[i].ID < planetsA[j].ID })
+	sort.Slice(planetsB, func(i, j int) bool { return planetsB[i].ID < planetsB[j].ID })
+
+	var aspectsList []Aspect
+	for _, pB := range planetsB {
+		for _, pA := range planetsA {
+			if name, _, exactDiff, isAspect := CalculateAspect(pB.Longitude, pA.Longitude); isAspect {
+				aspectsList = append(aspectsList, Aspect{
+					Planet1ID: pB.ID,
+					Planet2ID: pA.ID,
+					Planet1:   pB.Name + " (Transit)",
+					Planet2:   pA.Name + " (Natal)",
+					Type:      name,
+					Degree:    exactDiff,
+					Orb:       exactDiff,
+				})
+			}
+		}
+	}
+
+	sort.Slice(aspectsList, func(i, j int) bool {
+		if aspectsList[i].Planet1ID == aspectsList[j].Planet1ID {
+			return aspectsList[i].Planet2ID < aspectsList[j].Planet2ID
+		}
+		return aspectsList[i].Planet1ID < aspectsList[j].Planet1ID
+	})
+
+	return &AstroResult{
+		Type:      "synastry",
+		Timestamp: t2,
+		Planets:   planetsA,
+		Houses:    housesList,
+		Aspects:   aspectsList,
+	}, nil
+}
+
+// ComputePeriod выполняет расчет движения за период
+func (c *Calculator) ComputePeriod(ctx context.Context, start, end time.Time, stepHours int) (*AstroResult, error) {
+	if stepHours <= 0 {
+		stepHours = 24
+	}
+
+	var slices []TimeSlice
+
+	for currentTime := start; !currentTime.After(end); currentTime = currentTime.Add(time.Duration(stepHours) * time.Hour) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		var dret [2]C.double
+		C.swe_utc_to_jd(C.int(currentTime.Year()), C.int(int(currentTime.Month())), C.int(currentTime.Day()), C.int(currentTime.Hour()), C.int(currentTime.Minute()), C.double(currentTime.Second()), C.SE_GREG_CAL, &dret[0], nil)
+		tjdUt := dret[1]
+
+		var planets []Position
+		var xx [6]C.double
+		var serr [256]C.char
+
+		for _, id := range GetPlanetIDs() {
+			name := GetPlanetName(id)
+			if flags := C.swe_calc_ut(tjdUt, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr))); flags >= 0 {
+				planets = append(planets, Position{
+					ID:        id,
+					Name:      name,
+					Longitude: float64(xx[0]),
+					Latitude:  float64(xx[1]),
+					Speed:     float64(xx[3]),
+				})
+			}
+		}
+
+		sort.Slice(planets, func(i, j int) bool { return planets[i].ID < planets[j].ID })
+
+		var aspects []Aspect
+		for i := 0; i < len(planets); i++ {
+			for j := i + 1; j < len(planets); j++ {
+				if name, _, exactDiff, isAspect := CalculateAspect(planets[i].Longitude, planets[j].Longitude); isAspect {
+					aspects = append(aspects, Aspect{
+						Planet1ID: planets[i].ID,
+						Planet2ID: planets[j].ID,
+						Planet1:   planets[i].Name,
+						Planet2:   planets[j].Name,
+						Type:      name,
+						Degree:    exactDiff,
+						Orb:       exactDiff,
+					})
+				}
+			}
+		}
+
+		sort.Slice(aspects, func(i, j int) bool {
+			if aspects[i].Planet1ID == aspects[j].Planet1ID {
+				return aspects[i].Planet2ID < aspects[j].Planet2ID
+			}
+			return aspects[i].Planet1ID < aspects[j].Planet1ID
+		})
+
+		slices = append(slices, TimeSlice{
+			Timestamp: currentTime,
+			Planets:   planets,
+			Aspects:   aspects,
+		})
+	}
+
+	return &AstroResult{
+		Type:      "period",
+		Timestamp: start,
+		Slices:    slices,
+	}, nil
+}
+
+func dateToJulian(t time.Time) C.double {
+	var dret [2]C.double
+	C.swe_utc_to_jd(
+		C.int(t.Year()), C.int(int(t.Month())), C.int(t.Day()),
+		C.int(t.Hour()), C.int(t.Minute()), C.double(t.Second()),
+		C.SE_GREG_CAL,
+		&dret[0],
+		nil,
+	)
+	return dret[1] // dret[0] is ET, dret[1] is UT
+}
