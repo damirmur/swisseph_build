@@ -12,7 +12,6 @@ import (
 	"math"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 	"unsafe"
 )
@@ -140,7 +139,7 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 				exactTime, _ := findExactSignChange(id, curr.SignIndex, currentTime.Add(-step), currentTime)
 				signVal := curr.SignIndex
 				events = append(events, CalendarEvent{
-					Date:    strings.Clone(exactTime.In(loc).Format("2006-01-02T15:04")),
+					Date:    exactTime.In(loc).Format("2006-01-02T15:04"),
 					Type:    "chS",
 					Planets: []string{strconv.Itoa(id)},
 					Sign:    &signVal,
@@ -161,7 +160,7 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 					}
 					signVal := curr.SignIndex
 					events = append(events, CalendarEvent{
-						Date:    strings.Clone(exactStationTime.In(loc).Format("2006-01-02T15:04")),
+						Date:    exactStationTime.In(loc).Format("2006-01-02T15:04"),
 						Type:    "r", // Change Direction
 						Planets: []string{strconv.Itoa(id)},
 						Sign:    &signVal,
@@ -196,25 +195,11 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 						if math.Abs(prevDiff-asp.Angle) <= asp.Orb || math.Abs(currDiff-asp.Angle) <= asp.Orb {
 							exactTime, _ := findExactAspect(id1, id2, asp.Name, currentTime.Add(-step), currentTime)
 
-							var angle string
-							switch asp.Name {
-							case "Conjunction":
-								angle = "0"
-							case "Sextile":
-								angle = "60"
-							case "Square":
-								angle = "90"
-							case "Trine":
-								angle = "120"
-							case "Opposition":
-								angle = "180"
-							}
-
 							events = append(events, CalendarEvent{
-								Date:    strings.Clone(exactTime.In(loc).Format("2006-01-02T15:04")),
+								Date:    exactTime.In(loc).Format("2006-01-02T15:04"),
 								Type:    "exA",
 								Planets: []string{strconv.Itoa(id1), strconv.Itoa(id2)},
-								Aspect:  angle,
+								Aspect:  strconv.Itoa(int(asp.Angle)),
 								Degrees: []int{int(currLon1), int(currLon2)},
 							})
 						}
@@ -295,7 +280,7 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 				lunarDayVal := new(int)
 				*lunarDayVal = currentLunarDay
 				events = append(events, CalendarEvent{
-					Date: strings.Clone(exactTime.In(loc).Format("2006-01-02T15:04")),
+					Date: exactTime.In(loc).Format("2006-01-02T15:04"),
 					Type: "lunD",
 					Sign: lunarDayVal,
 				})
@@ -328,25 +313,11 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 
 						// Записываем аспект Луны в события (если он попадает в диапазон вывода)
 						if !exactAspTime.Before(start) {
-							var angle string
-							switch asp.Name {
-							case "Conjunction":
-								angle = "0"
-							case "Sextile":
-								angle = "60"
-							case "Square":
-								angle = "90"
-							case "Trine":
-								angle = "120"
-							case "Opposition":
-								angle = "180"
-							}
-
 							events = append(events, CalendarEvent{
-								Date:    strings.Clone(exactAspTime.In(loc).Format("2006-01-02T15:04")),
+								Date:    exactAspTime.In(loc).Format("2006-01-02T15:04"),
 								Type:    "exA",
 								Planets: []string{"1", strconv.Itoa(id)},
-								Aspect:  angle,
+								Aspect:  strconv.Itoa(int(asp.Angle)),
 								Degrees: []int{int(moonLon), int(planetLon)},
 							})
 						}
@@ -367,10 +338,10 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 			if !lastAspectTime.IsZero() && lastAspectTime.Before(exactSignTime) {
 				if !exactSignTime.Before(start) {
 					events = append(events, CalendarEvent{
-						Date:       strings.Clone(lastAspectTime.In(loc).Format("2006-01-02T15:04")),
+						Date:       lastAspectTime.In(loc).Format("2006-01-02T15:04"),
 						Type:       "noC",
 						Planets:    []string{"1"},
-						ChangeSign: strings.Clone(exactSignTime.In(loc).Format("2006-01-02T15:04")),
+						ChangeSign: exactSignTime.In(loc).Format("2006-01-02T15:04"),
 					})
 				}
 			}

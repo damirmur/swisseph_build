@@ -42,6 +42,11 @@ func GetExecutableDir() string {
 	return filepath.Dir(exePath)
 }
 
+// epheDir возвращает путь к каталогу эфемерид рядом с исполняемым файлом
+func epheDir() string {
+	return filepath.Join(GetExecutableDir(), "ephe")
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -150,17 +155,14 @@ func runInteractiveNatal() {
 			t = t.Add(time.Duration(-gd.UTCOffset) * time.Hour)
 		}
 
-		exeDir := GetExecutableDir()
-		ephePath := filepath.Join(exeDir, "ephe")
-		calc := astro.NewCalculator(ephePath)
+		calc := astro.NewCalculator(epheDir())
 		defer calc.Close()
 		result, err := calc.ComputeNatal(context.Background(), t, gd.Latitude, gd.Longitude, hsys)
 		if err != nil {
 			log.Fatalf("Ошибка расчета: %v", err)
 		}
 
-		render, _ := output.GetRenderer("console")
-		render.Render(context.Background(), result, os.Stdout)
+		renderConsole(result)
 	}
 }
 
@@ -195,17 +197,14 @@ func runInteractiveSynastry() {
 			t2 = t2.Add(time.Duration(-gd2.UTCOffset) * time.Hour)
 		}
 
-		exeDir := GetExecutableDir()
-		ephePath := filepath.Join(exeDir, "ephe")
-		calc := astro.NewCalculator(ephePath)
+		calc := astro.NewCalculator(epheDir())
 		defer calc.Close()
 		result, err := calc.ComputeSynastry(context.Background(), t1, t2, gd1.Latitude, gd1.Longitude, hsys)
 		if err != nil {
 			log.Fatalf("Ошибка расчета: %v", err)
 		}
 
-		render, _ := output.GetRenderer("console")
-		render.Render(context.Background(), result, os.Stdout)
+		renderConsole(result)
 	}
 }
 
@@ -278,9 +277,7 @@ func runInteractiveCalendar() {
 
 func executeAstroJob(jobType string) {
 	ctx := context.Background()
-	exeDir := GetExecutableDir()
-	ephePath := filepath.Join(exeDir, "ephe")
-	calc := astro.NewCalculator(ephePath)
+	calc := astro.NewCalculator(epheDir())
 	defer calc.Close()
 
 	var result *astro.AstroResult
@@ -326,6 +323,17 @@ func executeAstroJob(jobType string) {
 		log.Fatalf("Ошибка расчета: %v", err)
 	}
 
+	saveResult(ctx, result)
+}
+
+// renderConsole выводит результат в консоль (используется интерактивными потоками).
+func renderConsole(result *astro.AstroResult) {
+	render, _ := output.GetRenderer("console")
+	_ = render.Render(context.Background(), result, os.Stdout)
+}
+
+// saveResult выводит результат в консоль или сохраняет его в файл в зависимости от формата.
+func saveResult(ctx context.Context, result *astro.AstroResult) {
 	render, err := output.GetRenderer(outputFormat)
 	if err != nil {
 		log.Fatal(err)
@@ -333,34 +341,36 @@ func executeAstroJob(jobType string) {
 
 	if outputFormat == "console" {
 		render.Render(ctx, result, os.Stdout)
-	} else {
-		_ = os.MkdirAll(saveDir, 0755)
-
-		if outputFormat == "svg" || outputFormat == "png" {
-			svgFileName := fmt.Sprintf("%s_%d.svg", jobType, time.Now().Unix())
-			svgPath := filepath.Join(saveDir, svgFileName)
-
-			f, _ := os.Create(svgPath)
-			render.Render(ctx, result, f)
-			f.Close()
-
-			if outputFormat == "png" {
-				pngPath := svgPath[:len(svgPath)-4] + ".png"
-				if err := output.ConvertSvgToPng(svgPath, pngPath); err != nil {
-					exec.Command("./resvg", svgPath, pngPath).Run()
-				}
-				os.Remove(svgPath)
-				fmt.Printf("Сохранено в PNG: %s\n", pngPath)
-			} else {
-				fmt.Printf("Сохранено в SVG: %s\n", svgPath)
-			}
-		} else {
-			fileName := fmt.Sprintf("%s_%d.%s", jobType, time.Now().Unix(), outputFormat)
-			fullPath := filepath.Join(saveDir, fileName)
-			f, _ := os.Create(fullPath)
-			render.Render(ctx, result, f)
-			f.Close()
-			fmt.Printf("Сохранено: %s\n", fullPath)
-		}
+		return
 	}
+
+	_ = os.MkdirAll(saveDir, 0755)
+
+	if outputFormat == "svg" || outputFormat == "png" {
+		svgFileName := fmt.Sprintf("%s_%d.svg", result.Type, time.Now().Unix())
+		svgPath := filepath.Join(saveDir, svgFileName)
+
+		f, _ := os.Create(svgPath)
+		render.Render(ctx, result, f)
+		f.Close()
+
+		if outputFormat == "png" {
+			pngPath := svgPath[:len(svgPath)-4] + ".png"
+			if err := output.ConvertSvgToPng(svgPath, pngPath); err != nil {
+				exec.Command("./resvg", svgPath, pngPath).Run()
+			}
+			os.Remove(svgPath)
+			fmt.Printf("Сохранено в PNG: %s\n", pngPath)
+		} else {
+			fmt.Printf("Сохранено в SVG: %s\n", svgPath)
+		}
+		return
+	}
+
+	fileName := fmt.Sprintf("%s_%d.%s", result.Type, time.Now().Unix(), outputFormat)
+	fullPath := filepath.Join(saveDir, fileName)
+	f, _ := os.Create(fullPath)
+	render.Render(ctx, result, f)
+	f.Close()
+	fmt.Printf("Сохранено: %s\n", fullPath)
 }

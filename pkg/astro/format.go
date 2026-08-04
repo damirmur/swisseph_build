@@ -17,10 +17,10 @@ func FormatDegree(lon float64) string {
 	}
 	signIdx := int(lon / 30)
 	degInSign := lon - float64(signIdx*30)
-	
+
 	deg := int(degInSign)
 	min := int((degInSign - float64(deg)) * 60)
-	
+
 	return fmt.Sprintf("%02d°%02d' %s", deg, min, Signs[signIdx])
 }
 

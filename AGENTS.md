@@ -8,7 +8,17 @@ Go CLI that wraps the Swiss Ephemeris C library via cgo to compute astrological 
   `go build -o astro ./cmd/astro/main.go`
 - `run_calendar.sh` auto-rebuilds if any `.go` file is newer than `./astro`, then runs the `calendar` command.
 - Requires cgo. Only builds with the committed static library and headers (see cgo quirk below). `CGO_ENABLED=1`.
-- No tests exist (`*_test.go` none) and no lint/typecheck/CI config. Fastest verification is `go build -o /tmp/astro ./cmd/astro/main.go` plus `go vet ./...`.
+- No lint/typecheck/CI config. Fastest verification is `go build -o /tmp/astro ./cmd/astro/main.go` plus `go vet ./...`.
+- Tests: `go test ./tests/ -v`. The `tests/` package holds golden tests with the reference data embedded directly in the files:
+  - `calendar_test.go` regenerates the July-2026 event calendar (UTC+0) and compares count + event list against the embedded reference `output_data/calendar_1785807837.text`, printing detailed discrepancies on mismatch.
+  - `natal_test.go` regenerates the natal chart for 1971-11-19 19:43 UTC (51.77N, 55.10E, Placidus) and compares the text render against the embedded reference `output_data/natal_1785812687.text`.
+  - Both need the local `ephe/` data — they skip if absent. Other packages (`pkg/astro`, `pkg/output`) have no tests.
+
+## Calendar hot path — don't "optimize" blindly
+
+- ~96% of `ComputeCalendar` runtime is inside `swe_calc_ut` (C library); Go-side allocations are negligible (verified with `go test -bench=CalendarYear -cpuprofile` in `tests/benchmark_test.go`).
+- The golden reference pins exact minute values produced by the **current** algorithm. Some events sit within ~1–9 s of a minute boundary, so changing the golden-section iteration count (20) or the moon-loop step (1 h) flips their displayed minute and fails `TestCalendarEventsMatchReference`. Verified empirically: 17/19 iterations and 2 h step both break the test.
+- To genuinely speed up the year-long calendar (~8 s), you'd need a coarse-to-fine detection rewrite that provably preserves event times — high risk, no tests beyond the golden ones.
 
 ## cgo / Swiss Ephemeris wiring
 

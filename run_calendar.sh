@@ -10,9 +10,9 @@ INPUT_MONTH=${2:-$(date +%-m)}
 # --- Формат вывода ---
 FORMAT="${3:-console}"
 case "$FORMAT" in
-    console|json|text|image) ;; # допустимые значения
+    console|json|text) ;; # допустимые значения
     *)
-        echo "Ошибка: Неверный формат '$FORMAT'. Возможные: console, json, text, image."
+        echo "Ошибка: Неверный формат '$FORMAT'. Возможные: console, json, text."
         exit 1
         ;;
 esac
