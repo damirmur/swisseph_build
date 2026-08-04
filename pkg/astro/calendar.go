@@ -26,6 +26,52 @@ func getShortestDiff(lon1, lon2 float64) float64 {
 	return diff
 }
 
+// normalizeAngle приводит угол к диапазону (-180, 180]
+func normalizeAngle(a float64) float64 {
+	a = math.Mod(a+180, 360)
+	if a < 0 {
+		a += 360
+	}
+	return a - 180
+}
+
+// getSignedDiff возвращает направленное расстояние (по ходу зодиака) от lon2 до lon1 в диапазоне (-180, 180]
+func getSignedDiff(lon1, lon2 float64) float64 {
+	return normalizeAngle(lon1 - lon2)
+}
+
+// aspectCrossed определяет, пересекло ли угловое расстояние планет целевой аспектный угол между двумя соседними отсчетами.
+// Для 60°/90°/120° достаточно классической проверки пересечения кратчайшего расстояния.
+// Соединение (0°) и оппозиция (180°) — экстремумы кратчайшего расстояния (локальный минимум/максимум),
+// они не «пересекаются», а только касаются: их ловим по смене знака направленной разности долгот,
+// различая случаи по величине расстояния (при 0° планеты рядом, при 180° — напротив).
+func aspectCrossed(prevLon1, prevLon2, currLon1, currLon2, angle float64) bool {
+	prevShortest := getShortestDiff(prevLon1, prevLon2)
+	currShortest := getShortestDiff(currLon1, currLon2)
+
+	if angle > 0 && angle < 180 {
+		return (prevShortest <= angle && currShortest >= angle) ||
+			(prevShortest >= angle && currShortest <= angle)
+	}
+
+	if prevShortest == angle || currShortest == angle {
+		return true
+	}
+
+	prevSigned := getSignedDiff(prevLon1, prevLon2)
+	currSigned := getSignedDiff(currLon1, currLon2)
+	if prevSigned == 0 || currSigned == 0 {
+		return true
+	}
+	if prevSigned*currSigned < 0 {
+		if angle == 0 {
+			return prevShortest <= 90 && currShortest <= 90
+		}
+		return prevShortest >= 90 && currShortest >= 90
+	}
+	return false
+}
+
 // ComputeCalendar выполняет генерацию календаря событий без дублирования
 func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, loc *time.Location) (*AstroResult, error) {
 	if loc == nil {
@@ -146,7 +192,7 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 				currDiff := getShortestDiff(currLon1, currLon2)
 
 				for _, asp := range MajorAspects {
-					if (prevDiff <= asp.Angle && currDiff >= asp.Angle) || (prevDiff >= asp.Angle && currDiff <= asp.Angle) {
+					if aspectCrossed(prevLon1, prevLon2, currLon1, currLon2, asp.Angle) {
 						if math.Abs(prevDiff-asp.Angle) <= asp.Orb || math.Abs(currDiff-asp.Angle) <= asp.Orb {
 							exactTime, _ := findExactAspect(id1, id2, asp.Name, currentTime.Add(-step), currentTime)
 
@@ -276,7 +322,7 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 
 			for _, asp := range MajorAspects {
 				// Проверяем пересечение точного угла аспекта Луны с планетой
-				if (prevDiff <= asp.Angle && currDiff >= asp.Angle) || (prevDiff >= asp.Angle && currDiff <= asp.Angle) {
+				if aspectCrossed(prevMoonState, prevPlanetsState[id], moonLon, planetLon, asp.Angle) {
 					if math.Abs(prevDiff-asp.Angle) <= asp.Orb || math.Abs(currDiff-asp.Angle) <= asp.Orb {
 						exactAspTime, _ := findExactAspect(1, id, asp.Name, currentTime.Add(-moonStep), currentTime)
 
