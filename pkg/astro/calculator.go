@@ -50,6 +50,61 @@ func GetPlanetIDs() []int {
 	return []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12}
 }
 
+// calcPlanet рассчитывает положение планеты (без дома) на заданный юлианский момент.
+func calcPlanet(id int, tjdUt C.double, xx *[6]C.double, serr *[256]C.char) (Position, bool) {
+	if C.swe_calc_ut(tjdUt, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(xx)), (*C.char)(unsafe.Pointer(serr))) < 0 {
+		return Position{}, false
+	}
+	return Position{
+		ID:        id,
+		Name:      GetPlanetName(id),
+		Longitude: float64(xx[0]),
+		Latitude:  float64(xx[1]),
+		Speed:     float64(xx[3]),
+	}, true
+}
+
+// calcPlanetWithHouse рассчитывает положение планеты с номером её дома.
+func calcPlanetWithHouse(id int, tjdUt, lat, armc, eps C.double, hsys C.int, xx *[6]C.double, serr *[256]C.char) (Position, bool) {
+	p, ok := calcPlanet(id, tjdUt, xx, serr)
+	if !ok {
+		return Position{}, false
+	}
+	p.House = int(C.swe_house_pos(armc, lat, eps, hsys, (*C.double)(unsafe.Pointer(xx)), (*C.char)(unsafe.Pointer(serr))))
+	return p, true
+}
+
+// buildAspects находит все пары мажорных аспектов внутри списка планет и сортирует их.
+func buildAspects(planets []Position) []Aspect {
+	var aspectsList []Aspect
+	for i := 0; i < len(planets); i++ {
+		for j := i + 1; j < len(planets); j++ {
+			p1 := planets[i]
+			p2 := planets[j]
+
+			if name, _, exactDiff, isAspect := CalculateAspect(p1.Longitude, p2.Longitude); isAspect {
+				aspectsList = append(aspectsList, Aspect{
+					Planet1ID: p1.ID,
+					Planet2ID: p2.ID,
+					Planet1:   p1.Name,
+					Planet2:   p2.Name,
+					Type:      name,
+					Degree:    exactDiff,
+					Orb:       exactDiff,
+				})
+			}
+		}
+	}
+
+	sort.Slice(aspectsList, func(i, j int) bool {
+		if aspectsList[i].Planet1ID == aspectsList[j].Planet1ID {
+			return aspectsList[i].Planet2ID < aspectsList[j].Planet2ID
+		}
+		return aspectsList[i].Planet1ID < aspectsList[j].Planet1ID
+	})
+	return aspectsList
+}
+
 // ComputeNatal выполняет натальный расчет
 func (c *Calculator) ComputeNatal(ctx context.Context, t time.Time, lat, lon float64, hsys string) (*AstroResult, error) {
 	var dret [2]C.double
@@ -86,52 +141,13 @@ func (c *Calculator) ComputeNatal(ctx context.Context, t time.Time, lat, lon flo
 	var xx [6]C.double
 
 	for _, id := range GetPlanetIDs() {
-		name := GetPlanetName(id)
-		if flags := C.swe_calc_ut(tjdUt, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr))); flags >= 0 {
-			lonPlan := float64(xx[0])
-			houseNum := C.swe_house_pos(armc, C.double(lat), eps[0], cHsys, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr)))
-
-			planetsList = append(planetsList, Position{
-				ID:        id,
-				Name:      name,
-				Longitude: lonPlan,
-				Latitude:  float64(xx[1]),
-				Speed:     float64(xx[3]),
-				House:     int(houseNum),
-			})
+		if p, ok := calcPlanetWithHouse(id, tjdUt, C.double(lat), armc, eps[0], cHsys, &xx, &serr); ok {
+			planetsList = append(planetsList, p)
 		}
 	}
-
-	sort.Slice(planetsList, func(i, j int) bool {
-		return planetsList[i].ID < planetsList[j].ID
-	})
 
 	var aspectsList []Aspect
-	for i := 0; i < len(planetsList); i++ {
-		for j := i + 1; j < len(planetsList); j++ {
-			p1 := planetsList[i]
-			p2 := planetsList[j]
-
-			if name, _, exactDiff, isAspect := CalculateAspect(p1.Longitude, p2.Longitude); isAspect {
-				aspectsList = append(aspectsList, Aspect{
-					Planet1ID: p1.ID,
-					Planet2ID: p2.ID,
-					Planet1:   p1.Name,
-					Planet2:   p2.Name,
-					Type:      name,
-					Degree:    exactDiff,
-					Orb:       exactDiff,
-				})
-			}
-		}
-	}
-
-	sort.Slice(aspectsList, func(i, j int) bool {
-		if aspectsList[i].Planet1ID == aspectsList[j].Planet1ID {
-			return aspectsList[i].Planet2ID < aspectsList[j].Planet2ID
-		}
-		return aspectsList[i].Planet1ID < aspectsList[j].Planet1ID
-	})
+	aspectsList = buildAspects(planetsList)
 
 	return &AstroResult{
 		Type:      "natal",
@@ -169,38 +185,17 @@ func (c *Calculator) ComputeSynastry(ctx context.Context, t1, t2 time.Time, lat1
 	var xx [6]C.double
 
 	for _, id := range GetPlanetIDs() {
-		name := GetPlanetName(id)
-		if flags := C.swe_calc_ut(tjdUt1, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr))); flags >= 0 {
-			houseNum := C.swe_house_pos(armc1, C.double(lat1), eps1[0], cHsys, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr)))
-			planetsA = append(planetsA, Position{
-				ID:        id,
-				Name:      name,
-				Longitude: float64(xx[0]),
-				Latitude:  float64(xx[1]),
-				Speed:     float64(xx[3]),
-				House:     int(houseNum),
-			})
+		if p, ok := calcPlanetWithHouse(id, tjdUt1, C.double(lat1), armc1, eps1[0], cHsys, &xx, &serr); ok {
+			planetsA = append(planetsA, p)
 		}
 	}
 
 	var planetsB []Position
 	for _, id := range GetPlanetIDs() {
-		name := GetPlanetName(id)
-		if flags := C.swe_calc_ut(tjdUt2, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr))); flags >= 0 {
-			houseNum := C.swe_house_pos(armc1, C.double(lat1), eps1[0], cHsys, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr)))
-			planetsB = append(planetsB, Position{
-				ID:        id,
-				Name:      name,
-				Longitude: float64(xx[0]),
-				Latitude:  float64(xx[1]),
-				Speed:     float64(xx[3]),
-				House:     int(houseNum),
-			})
+		if p, ok := calcPlanetWithHouse(id, tjdUt2, C.double(lat1), armc1, eps1[0], cHsys, &xx, &serr); ok {
+			planetsB = append(planetsB, p)
 		}
 	}
-
-	sort.Slice(planetsA, func(i, j int) bool { return planetsA[i].ID < planetsA[j].ID })
-	sort.Slice(planetsB, func(i, j int) bool { return planetsB[i].ID < planetsB[j].ID })
 
 	var aspectsList []Aspect
 	for _, pB := range planetsB {
@@ -259,43 +254,13 @@ func (c *Calculator) ComputePeriod(ctx context.Context, start, end time.Time, st
 		var serr [256]C.char
 
 		for _, id := range GetPlanetIDs() {
-			name := GetPlanetName(id)
-			if flags := C.swe_calc_ut(tjdUt, C.int(id), C.SEFLG_SWIEPH|C.SEFLG_SPEED, (*C.double)(unsafe.Pointer(&xx)), (*C.char)(unsafe.Pointer(&serr))); flags >= 0 {
-				planets = append(planets, Position{
-					ID:        id,
-					Name:      name,
-					Longitude: float64(xx[0]),
-					Latitude:  float64(xx[1]),
-					Speed:     float64(xx[3]),
-				})
+			if p, ok := calcPlanet(id, tjdUt, &xx, &serr); ok {
+				planets = append(planets, p)
 			}
 		}
-
-		sort.Slice(planets, func(i, j int) bool { return planets[i].ID < planets[j].ID })
 
 		var aspects []Aspect
-		for i := 0; i < len(planets); i++ {
-			for j := i + 1; j < len(planets); j++ {
-				if name, _, exactDiff, isAspect := CalculateAspect(planets[i].Longitude, planets[j].Longitude); isAspect {
-					aspects = append(aspects, Aspect{
-						Planet1ID: planets[i].ID,
-						Planet2ID: planets[j].ID,
-						Planet1:   planets[i].Name,
-						Planet2:   planets[j].Name,
-						Type:      name,
-						Degree:    exactDiff,
-						Orb:       exactDiff,
-					})
-				}
-			}
-		}
-
-		sort.Slice(aspects, func(i, j int) bool {
-			if aspects[i].Planet1ID == aspects[j].Planet1ID {
-				return aspects[i].Planet2ID < aspects[j].Planet2ID
-			}
-			return aspects[i].Planet1ID < aspects[j].Planet1ID
-		})
+		aspects = buildAspects(planets)
 
 		slices = append(slices, TimeSlice{
 			Timestamp: currentTime,

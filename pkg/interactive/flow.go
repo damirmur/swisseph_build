@@ -29,6 +29,16 @@ type GeoData struct {
 	UTCOffset float64 `json:"offset_hours"`
 }
 
+const (
+	nominatimURL = "https://nominatim.openstreetmap.org/search"
+	timeapiURL   = "https://www.timeapi.io/api/TimeZone/coordinate"
+	geoUserAgent = "picoclaw-astro-v2"
+
+	// Дефолтный фолбек, если Timezone API недоступен (например, Москва)
+	fallbackTimezone  = "Europe/Moscow"
+	fallbackUTCOffset = 3.0
+)
+
 func readLine(reader *bufio.Reader, prompt string) string {
 	fmt.Print(prompt)
 	text, _ := reader.ReadString('\n')
@@ -153,13 +163,13 @@ func CollectData(allowEmptyDate bool) (*UserInput, error) {
 func GetGeoData(input *UserInput) (*GeoData, error) {
 	// 1. Поиск координат через OpenStreetMap Nominatim API
 	escapedCity := url.QueryEscape(input.City)
-	nominatimURL := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%s&format=json&limit=1", escapedCity)
+	geoReqURL := fmt.Sprintf("%s?q=%s&format=json&limit=1", nominatimURL, escapedCity)
 
-	req, err := http.NewRequest("GET", nominatimURL, nil)
+	req, err := http.NewRequest("GET", geoReqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка создания запроса к Nominatim: %v", err)
 	}
-	req.Header.Set("User-Agent", "picoclaw-astro-v2")
+	req.Header.Set("User-Agent", geoUserAgent)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -195,30 +205,14 @@ func GetGeoData(input *UserInput) (*GeoData, error) {
 	}
 
 	// 2. Получение часового пояса по координатам через TimeAPI
-	timezoneURL := fmt.Sprintf("https://www.timeapi.io/api/TimeZone/coordinate?latitude=%.6f&longitude=%.6f", lat, lon)
-	timeReq, err := http.NewRequest("GET", timezoneURL, nil)
-	if err == nil {
-		timeReq.Header.Set("User-Agent", "picoclaw-astro-v2")
-		if timeResp, err := client.Do(timeReq); err == nil {
-			defer timeResp.Body.Close()
-			if timeResp.StatusCode == http.StatusOK {
-				var tzResult struct {
-					TimeZone        string `json:"timeZone"`
-					CurrentUtcOffset struct {
-						Seconds int `json:"seconds"`
-					} `json:"currentUtcOffset"`
-				}
-				if err := json.NewDecoder(timeResp.Body).Decode(&tzResult); err == nil {
-					return &GeoData{
-						City:      input.City,
-						Latitude:  lat,
-						Longitude: lon,
-						Timezone:  tzResult.TimeZone,
-						UTCOffset: float64(tzResult.CurrentUtcOffset.Seconds) / 3600.0,
-					}, nil
-				}
-			}
-		}
+	if tz, ok := fetchTimezone(client, lat, lon); ok {
+		return &GeoData{
+			City:      input.City,
+			Latitude:  lat,
+			Longitude: lon,
+			Timezone:  tz.TimeZone,
+			UTCOffset: float64(tz.CurrentUtcOffset.Seconds) / 3600.0,
+		}, nil
 	}
 
 	// Дефолтный фолбек на UTC+3 (например, Москва), если Timezone API недоступен
@@ -226,9 +220,43 @@ func GetGeoData(input *UserInput) (*GeoData, error) {
 		City:      input.City,
 		Latitude:  lat,
 		Longitude: lon,
-		Timezone:  "Europe/Moscow",
-		UTCOffset: 3.0,
+		Timezone:  fallbackTimezone,
+		UTCOffset: fallbackUTCOffset,
 	}, nil
+}
+
+// timezoneResult описывает ответ TimeAPI по координатам
+type timezoneResult struct {
+	TimeZone         string `json:"timeZone"`
+	CurrentUtcOffset struct {
+		Seconds int `json:"seconds"`
+	} `json:"currentUtcOffset"`
+}
+
+// fetchTimezone запрашивает часовой пояс по координатам; ok=false при любой ошибке сети/статуса.
+func fetchTimezone(client *http.Client, lat, lon float64) (timezoneResult, bool) {
+	tzReqURL := fmt.Sprintf("%s?latitude=%.6f&longitude=%.6f", timeapiURL, lat, lon)
+	timeReq, err := http.NewRequest("GET", tzReqURL, nil)
+	if err != nil {
+		return timezoneResult{}, false
+	}
+	timeReq.Header.Set("User-Agent", geoUserAgent)
+
+	timeResp, err := client.Do(timeReq)
+	if err != nil {
+		return timezoneResult{}, false
+	}
+	defer timeResp.Body.Close()
+
+	if timeResp.StatusCode != http.StatusOK {
+		return timezoneResult{}, false
+	}
+
+	var tz timezoneResult
+	if err := json.NewDecoder(timeResp.Body).Decode(&tz); err != nil {
+		return timezoneResult{}, false
+	}
+	return tz, true
 }
 
 func ConfirmData(input *UserInput, gd *GeoData) bool {
@@ -239,7 +267,7 @@ func ConfirmData(input *UserInput, gd *GeoData) bool {
 		fmt.Printf("Пол: %s\n", input.Gender)
 	}
 	fmt.Print("\nВерно? (y/n) [Enter - да]: ")
-	
+
 	reader := bufio.NewReader(os.Stdin)
 	confirm, _ := reader.ReadString('\n')
 	return parseConfirm(confirm)
@@ -251,7 +279,7 @@ func MainMenu() int {
 	fmt.Println("1 - Натал (по умолчанию)")
 	fmt.Println("2 - Синастрия")
 	fmt.Println("3 - Календарь")
-	
+
 	for {
 		choice := readLine(reader, "Выберите тип расчета [1-3, Enter - 1]: ")
 		if choice == "" {
@@ -268,7 +296,7 @@ func MainMenu() int {
 func CollectCalendarData() (int, int, string) {
 	reader := bufio.NewReader(os.Stdin)
 	now := time.Now()
-	
+
 	year := now.Year()
 	month := int(now.Month())
 

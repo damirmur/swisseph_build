@@ -121,66 +121,6 @@ func GetSignRuGenitive(idx int) string {
 	return fmt.Sprintf("Знака %d", idx)
 }
 
-func (e CalendarEvent) String() string {
-	parsedTime, err := time.Parse("2006-01-02T15:04", e.Date)
-	timeStr := e.Date
-	if err == nil {
-		timeStr = parsedTime.Format("02.01.2006 15:04")
-	}
-
-	switch e.Type {
-	case "chS": // Смена знака (Ингрессия)
-		planet := "Планета"
-		if len(e.Planets) > 0 {
-			planet = GetPlanetRu(e.Planets[0])
-		}
-		signIdx := 0
-		if e.Sign != nil {
-			signIdx = *e.Sign // Разыменовываем указатель (получаем число 0, 1, 2...)
-		}
-
-		sign := GetSignRuGenitive(signIdx)
-		return fmt.Sprintf("[%s] Ингрессия: %s переходит в знак %s", timeStr, planet, sign)
-	case "r": // Смена направления движения (Разворот)
-		planet := "Планета"
-		if len(e.Planets) > 0 {
-			planet = GetPlanetRu(e.Planets[0])
-		}
-
-		motionType := "директный"
-		if e.Aspect == "R" {
-			motionType = "ретроградный"
-		}
-
-		return fmt.Sprintf("[%s] Разворот: %s %s", timeStr, planet, motionType)
-	case "exA": // Точный аспект
-		p1 := "Планета 1"
-		p2 := "Планета 2"
-		if len(e.Planets) >= 2 {
-			p1 = GetPlanetRu(e.Planets[0])
-			p2 = GetPlanetRu(e.Planets[1])
-		}
-		aspect := GetAspectRu(e.Aspect)
-		return fmt.Sprintf("[%s] Аспект: %s - %s (%s)", timeStr, p1, p2, aspect)
-
-	case "lunD": // Лунный день
-		return fmt.Sprintf("[%s] %d-й лунный день", timeStr, e.Sign)
-
-	case "noC": // Луна без курса
-		changeTimeStr := e.ChangeSign
-		parsedChange, err := time.Parse("2006-01-02T15:04", e.ChangeSign)
-		if err == nil {
-			changeTimeStr = parsedChange.Format("15:04")
-		} else if len(changeTimeStr) > 16 {
-			changeTimeStr = changeTimeStr[11:16]
-		}
-		return fmt.Sprintf("[%s] Луна без курса (холостая) до %s", timeStr, changeTimeStr)
-
-	default:
-		return fmt.Sprintf("[%s] Событие %s: %v", timeStr, e.Type, e.Planets)
-	}
-}
-
 // FilterConfig определяет параметры фильтрации для результатов расчетов
 type FilterConfig struct {
 	MaxOrb      *float64        // Фильтр по точности орбиса (например, 1.0). Если nil — фильтрация по орбису отключена

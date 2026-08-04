@@ -72,19 +72,7 @@ func findExactSignChange(id int, targetSign int, start, end time.Time) (time.Tim
 }
 
 func findExactAspect(id1, id2 int, aspectName string, start, end time.Time) (time.Time, error) {
-	var targetAngle float64
-	switch aspectName {
-	case "Conjunction":
-		targetAngle = 0
-	case "Sextile":
-		targetAngle = 60
-	case "Square":
-		targetAngle = 90
-	case "Trine":
-		targetAngle = 120
-	case "Opposition":
-		targetAngle = 180
-	}
+	targetAngle := aspectAngle(aspectName)
 
 	f := func(t time.Time) float64 {
 		diff := getShortestDiff(getPlanetLon(id1, t), getPlanetLon(id2, t)) - targetAngle
