@@ -1,2 +1,2 @@
 #!/bin/bash
-git push --set-upstream origin prod-linux
+git push --set-upstream origin main

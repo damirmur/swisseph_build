@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Переходим в директорию проекта
-cd /home/dmyr/.picoclaw/swisseph_build/ || exit 1
+cd /home/dmyr/swisseph_build/ || exit 1
 
 # Принимаем аргументы или берём текущие значения
 INPUT_YEAR=${1:-$(date +%Y)}

@@ -88,25 +88,37 @@ var zodiacSignsRu = []string{
 	"Весы", "Скорпион", "Стрелец", "Козерог", "Водолей", "Рыбы",
 }
 
-func getPlanetRu(p string) string {
+var zodiacSignsRuGenitive = []string{
+	"Овна", "Тельца", "Близнецов", "Рака", "Льва", "Девы",
+	"Весов", "Скорпиона", "Стрельца", "Козерога", "Водолея", "Рыб",
+}
+
+func GetPlanetRu(p string) string {
 	if ru, ok := planetNamesRu[p]; ok {
 		return ru
 	}
 	return p
 }
 
-func getAspectRu(a string) string {
+func GetAspectRu(a string) string {
 	if ru, ok := aspectNamesRu[a]; ok {
 		return ru
 	}
 	return a
 }
 
-func getSignRu(idx int) string {
+func GetSignRu(idx int) string {
 	if idx >= 0 && idx < 12 {
 		return zodiacSignsRu[idx]
 	}
 	return fmt.Sprintf("Знак %d", idx)
+}
+
+func GetSignRuGenitive(idx int) string {
+	if idx >= 0 && idx < 12 {
+		return zodiacSignsRuGenitive[idx]
+	}
+	return fmt.Sprintf("Знака %d", idx)
 }
 
 func (e CalendarEvent) String() string {
@@ -120,19 +132,19 @@ func (e CalendarEvent) String() string {
 	case "chS": // Смена знака (Ингрессия)
 		planet := "Планета"
 		if len(e.Planets) > 0 {
-			planet = getPlanetRu(e.Planets[0])
+			planet = GetPlanetRu(e.Planets[0])
 		}
 		signIdx := 0
 		if e.Sign != nil {
 			signIdx = *e.Sign // Разыменовываем указатель (получаем число 0, 1, 2...)
 		}
 
-		sign := getSignRu(signIdx)
+		sign := GetSignRuGenitive(signIdx)
 		return fmt.Sprintf("[%s] Ингрессия: %s переходит в знак %s", timeStr, planet, sign)
 	case "r": // Смена направления движения (Разворот)
 		planet := "Планета"
 		if len(e.Planets) > 0 {
-			planet = getPlanetRu(e.Planets[0])
+			planet = GetPlanetRu(e.Planets[0])
 		}
 
 		motionType := "директный"
@@ -145,10 +157,10 @@ func (e CalendarEvent) String() string {
 		p1 := "Планета 1"
 		p2 := "Планета 2"
 		if len(e.Planets) >= 2 {
-			p1 = getPlanetRu(e.Planets[0])
-			p2 = getPlanetRu(e.Planets[1])
+			p1 = GetPlanetRu(e.Planets[0])
+			p2 = GetPlanetRu(e.Planets[1])
 		}
-		aspect := getAspectRu(e.Aspect)
+		aspect := GetAspectRu(e.Aspect)
 		return fmt.Sprintf("[%s] Аспект: %s - %s (%s)", timeStr, p1, p2, aspect)
 
 	case "lunD": // Лунный день
@@ -281,7 +293,7 @@ func (r *AstroResult) ApplyFilter(cfg FilterConfig) {
 				if len(e.Planets) > 0 {
 					keepEvent := false
 					for _, ep := range e.Planets {
-						epRu := getPlanetRu(ep)
+						epRu := GetPlanetRu(ep)
 						idStr := ep
 						if id, err := strconv.Atoi(ep); err == nil {
 							idStr = GetPlanetName(id)
