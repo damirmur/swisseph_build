@@ -10,3 +10,4 @@ output_data/
 .vscode/
 # Игнорируем рабочую папку вывода
 output/
+astro3d.ru/
