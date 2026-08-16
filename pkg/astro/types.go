@@ -54,6 +54,8 @@ type AstroResult struct {
 	Year      int             `json:"year,omitempty"`
 	Planets   []Position      `json:"planets,omitempty"`
 	Houses    []House         `json:"houses,omitempty"`
+	PlanetsB  []Position      `json:"planets_b,omitempty"`
+	HousesB   []House         `json:"houses_b,omitempty"`
 	Aspects   []Aspect        `json:"aspects,omitempty"`
 	Events    []CalendarEvent `json:"events,omitempty"`
 	Slices    []TimeSlice     `json:"slices,omitempty"`

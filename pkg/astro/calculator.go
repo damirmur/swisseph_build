@@ -226,6 +226,8 @@ func (c *Calculator) ComputeSynastry(ctx context.Context, t1, t2 time.Time, lat1
 		Timestamp: t2,
 		Planets:   planetsA,
 		Houses:    housesList,
+		PlanetsB:  planetsB,
+		HousesB:   housesList,
 		Aspects:   aspectsList,
 	}, nil
 }
