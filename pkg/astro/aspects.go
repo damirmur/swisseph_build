@@ -1,6 +1,10 @@
 package astro
 
-import "math"
+import (
+	"fmt"
+	"math"
+	"strconv"
+)
 
 // AspectConfig задает параметры для поиска аспекта
 type AspectConfig struct {
@@ -38,4 +42,32 @@ func aspectAngle(name string) float64 {
 		}
 	}
 	return 0
+}
+
+// MajorAspectAngles — углы мажорных аспектов (используются по умолчанию в natal-period).
+var MajorAspectAngles = []float64{0, 60, 90, 120, 180}
+
+// AspectConfigs строит список конфигураций аспектов для заданных углов с единым орбом.
+func AspectConfigs(angles []float64, orb float64) []AspectConfig {
+	cfgs := make([]AspectConfig, 0, len(angles))
+	for _, a := range angles {
+		name := AspectDict[strconv.FormatFloat(a, 'f', -1, 64)]
+		if name == "" {
+			name = fmt.Sprintf("%.0f", a)
+		}
+		cfgs = append(cfgs, AspectConfig{Name: name, Angle: a, Orb: orb})
+	}
+	return cfgs
+}
+
+// CalculateAspectWith проверяет наличие аспекта между двумя долготами по заданному набору конфигураций.
+func CalculateAspectWith(lon1, lon2 float64, configs []AspectConfig) (string, float64, float64, bool) {
+	diff := getShortestDiff(lon1, lon2)
+	for _, asp := range configs {
+		exactDiff := math.Abs(diff - asp.Angle)
+		if exactDiff <= asp.Orb {
+			return asp.Name, asp.Angle, exactDiff, true
+		}
+	}
+	return "", 0, 0, false
 }
