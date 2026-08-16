@@ -69,9 +69,10 @@ type Envelope struct {
 }
 
 const (
-	NatalSchema    = "astro3d.natal/v1"
-	PeriodSchema   = "astro3d.period/v1"
-	SynastrySchema = "astro3d.synastry/v1"
+	NatalSchema        = "astro3d.natal/v1"
+	PeriodSchema       = "astro3d.period/v1"
+	SynastrySchema     = "astro3d.synastry/v1"
+	NatalPeriodSchema  = "astro3d.natal_period/v1"
 )
 
 // ToNatalData преобразует AstroResult натальной карты в компактный NatalData.
