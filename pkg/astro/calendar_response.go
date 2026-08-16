@@ -20,7 +20,7 @@ type CompactEvent struct {
 // meta — словари и описание структуры.
 type CalendarResponse struct {
 	Schema  string         `json:"schema"`
-	Meta    CalendarMeta   `json:"meta"`
+	Meta    Meta           `json:"meta"`
 	AscSign *int           `json:"asc_sign,omitempty"` // знак Асцендента (0-11), если запрошены дома
 	Data    []CompactEvent `json:"data"`
 }
