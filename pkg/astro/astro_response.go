@@ -28,6 +28,7 @@ func newPlanetPoint(id int, lon, speed float64) PlanetPoint {
 type NatalData struct {
 	Planets []PlanetPoint `json:"planets"`
 	Cusps   []float64    `json:"cusps"`
+	Aspects []Aspect      `json:"aspects,omitempty"`
 }
 
 // PeriodData — данные периода в формате статического chartPeriod.out.
@@ -85,7 +86,7 @@ func ToNatalData(res *AstroResult) NatalData {
 	for _, h := range res.Houses {
 		cusps = append(cusps, h.Longitude)
 	}
-	return NatalData{Planets: planets, Cusps: cusps}
+	return NatalData{Planets: planets, Cusps: cusps, Aspects: res.Aspects}
 }
 
 // ToPeriodData преобразует AstroResult периода в компактный PeriodData.
