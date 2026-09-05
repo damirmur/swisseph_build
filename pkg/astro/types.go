@@ -45,6 +45,9 @@ type CalendarEvent struct {
 	Aspect     string   `json:"aspect,omitempty"`
 	Degrees    []int    `json:"degrees,omitempty"`
 	ChangeSign string   `json:"change_sign,omitempty"`
+	// VoidEnd — окончание Луны без курса (тип noC): первый аспект Луны
+	// в новом знаке к планетам 0,2..9. Пусто для остальных типов событий.
+	VoidEnd string `json:"void_end,omitempty"`
 }
 
 type AstroResult struct {

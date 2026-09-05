@@ -71,6 +71,16 @@ func aspectCrossed(prevLon1, prevLon2, currLon1, currLon2, angle float64) bool {
 	return false
 }
 
+// VocPlanetIDs — планеты, аспекты Луны к которым определяют Луну без курса:
+// Солнце (0) и планеты 2..9 (Меркурий…Плутон включительно). Луна (1), Узлы
+// (10, 11), Лилит (12) и остальные точки не учитываются.
+var VocPlanetIDs = []int{0, 2, 3, 4, 5, 6, 7, 8, 9}
+
+// isVocPlanet проверяет, входит ли планета в набор для Луны без курса.
+func isVocPlanet(id int) bool {
+	return id == 0 || (id >= 2 && id <= 9)
+}
+
 // ComputeCalendar выполняет генерацию календаря событий без дублирования
 func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, loc *time.Location) (*AstroResult, error) {
 	if loc == nil {
@@ -214,9 +224,13 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 		}
 	}
 
-	// 2. Лунный цикл (шаг 1 час): лунные дни, аспекты Луны и Луна без курса
+	// 2. Лунный цикл (шаг 1 час): лунные дни, аспекты Луны и Луна без курса.
+	// Хвост +72 часа за концом периода: закрывающий аспект нового знака может
+	// лежать за границей запрошенного периода; exA/lunD в хвосте не испускаются,
+	// отслеживается только закрытие открытых дуг noC.
 	moonStep := 1 * time.Hour
 	moonStart := start.Add(-48 * time.Hour)
+	moonEnd := end.Add(72 * time.Hour)
 	tjdUtMoon := dateToJulian(moonStart)
 	var xxMoon, xxSun [6]C.double
 
@@ -237,7 +251,8 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 	prevLunarDay := int(diff/12) + 1
 	prevMoonSign := int(moonLon / 30.0)
 
-	var lastAspectTime time.Time
+	var vocStart time.Time   // последний квалифаспект Луны (к планетам 0,2..9)
+	var vocIngress time.Time // первая ингрессия Луны после vocStart; ноль — дуга не открыта
 	var prevMoonState float64 = moonLon
 	prevPlanetsState := make(map[int]float64)
 
@@ -251,7 +266,7 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 		prevPlanetsState[id] = float64(xxPlanet[0])
 	}
 
-	for currentTime := moonStart.Add(moonStep); !currentTime.After(end); currentTime = currentTime.Add(moonStep) {
+	for currentTime := moonStart.Add(moonStep); !currentTime.After(moonEnd); currentTime = currentTime.Add(moonStep) {
 		tjdUt = dateToJulian(currentTime)
 
 		C.swe_calc_ut(tjdUt, C.int(1), C.SEFLG_SWIEPH, (*C.double)(unsafe.Pointer(&xxMoon)), (*C.char)(unsafe.Pointer(&tmpSerr)))
@@ -276,7 +291,7 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 				targetDay = 1
 			}
 			exactTime, _ := findExactLunarDay(targetDay, currentTime.Add(-moonStep), currentTime)
-			if !exactTime.Before(start) {
+			if !exactTime.Before(start) && !exactTime.After(end) {
 				lunarDayVal := new(int)
 				*lunarDayVal = currentLunarDay
 				events = append(events, CalendarEvent{
@@ -290,6 +305,7 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 
 		currentMoonSign := int(moonLon / 30.0)
 		currPlanetsState := make(map[int]float64)
+		var stepVoc []time.Time // точные времена квалифаспектов Луны за этот шаг
 
 		// Рассчитываем и проверяем аспекты Луны к планетам по пересечению угла
 		for _, id := range planetIDs {
@@ -311,8 +327,9 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 					if math.Abs(prevDiff-asp.Angle) <= asp.Orb || math.Abs(currDiff-asp.Angle) <= asp.Orb {
 						exactAspTime, _ := findExactAspect(1, id, asp.Name, currentTime.Add(-moonStep), currentTime)
 
-						// Записываем аспект Луны в события (если он попадает в диапазон вывода)
-						if !exactAspTime.Before(start) {
+						// Записываем аспект Луны в события (если он попадает в диапазон вывода;
+						// хвост за end служит только закрытию дуг noC и в вывод не идёт)
+						if !exactAspTime.Before(start) && !exactAspTime.After(end) {
 							events = append(events, CalendarEvent{
 								Date:    exactAspTime.In(loc).Format("2006-01-02T15:04"),
 								Type:    "exA",
@@ -322,32 +339,87 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 							})
 						}
 
-						// Сохраняем время аспекта для расчета Луны без курса
-						if exactAspTime.After(lastAspectTime) {
-							lastAspectTime = exactAspTime
+						// Кандидат на старт/конец Луны без курса — только планеты 0,2..9
+						// (Узлы, Лилит и прочие точки на noC не влияют)
+						if isVocPlanet(id) {
+							stepVoc = append(stepVoc, exactAspTime)
 						}
 					}
 				}
 			}
 		}
 
-		// Луна без курса (проверяем ингрессию Луны)
+		// Луна без курса: старт — последний квалифаспект Луны (к планетам 0,2..9),
+		// конец — первый квалифаспект в новом знаке. Ингрессия лишь открывает дугу
+		// (первая из них пишется в ChangeSign); закрытие отложенное, т.к. конец
+		// лежит позже ингрессии. Знак вообще без квалифаспектов дугу не закрывает:
+		// она тянется через него до первого квалифаспекта в более позднем знаке.
+		// Аспект и ингрессия могут попасть в один часовой шаг, поэтому применяем
+		// метки шага в хронологическом порядке (при равенстве — сначала аспект:
+		// он замыкает старый знак, ингрессия открывает новую дугу).
+		type vocMark struct {
+			t         time.Time
+			isIngress bool
+		}
+		var marks []vocMark
 		if currentMoonSign != prevMoonSign {
-			exactSignTime, _ := findExactSignChange(1, currentMoonSign, currentTime.Add(-moonStep), currentTime)
-
-			if !lastAspectTime.IsZero() && lastAspectTime.Before(exactSignTime) {
-				if !exactSignTime.Before(start) {
-					events = append(events, CalendarEvent{
-						Date:       lastAspectTime.In(loc).Format("2006-01-02T15:04"),
-						Type:       "noC",
-						Planets:    []string{"1"},
-						ChangeSign: exactSignTime.In(loc).Format("2006-01-02T15:04"),
-					})
-				}
+			if exactSignTime, err := findExactSignChange(1, currentMoonSign, currentTime.Add(-moonStep), currentTime); err == nil {
+				marks = append(marks, vocMark{t: exactSignTime, isIngress: true})
 			}
-
 			prevMoonSign = currentMoonSign
-			lastAspectTime = time.Time{}
+		}
+		for _, ta := range stepVoc {
+			marks = append(marks, vocMark{t: ta})
+		}
+		slices.SortFunc(marks, func(a, b vocMark) int {
+			if a.t.Before(b.t) {
+				return -1
+			}
+			if a.t.After(b.t) {
+				return 1
+			}
+			if a.isIngress == b.isIngress {
+				return 0
+			}
+			if a.isIngress {
+				return 1
+			}
+			return -1
+		})
+		for _, m := range marks {
+			if m.isIngress {
+				switch {
+				case vocStart.IsZero() || !vocStart.Before(m.t):
+					// Перед ингрессией не было квалифаспекта — открывать нечего
+				case m.t.Before(start):
+					// Ингрессия до запрошенного периода — дуга отбрасывается
+					vocStart = time.Time{}
+					vocIngress = time.Time{}
+				case m.t.After(end):
+					if vocIngress.IsZero() {
+						// Первая ингрессия дуги — в хвосте за периодом: дуга отбрасывается.
+						// Открытая в диапазоне дуга хвостовую ингрессию переживает без изменений.
+						vocStart = time.Time{}
+					}
+				case vocIngress.IsZero():
+					vocIngress = m.t // первая ингрессия дуги; следующие её не сдвигают
+				}
+				continue
+			}
+			if !vocIngress.IsZero() && !m.t.Before(vocIngress) {
+				// Первый квалифаспект нового знака — закрываем дугу
+				events = append(events, CalendarEvent{
+					Date:       vocStart.In(loc).Format("2006-01-02T15:04"),
+					Type:       "noC",
+					Planets:    []string{"1"},
+					ChangeSign: vocIngress.In(loc).Format("2006-01-02T15:04"),
+					VoidEnd:    m.t.In(loc).Format("2006-01-02T15:04"),
+				})
+				vocStart = m.t
+				vocIngress = time.Time{}
+			} else if m.t.After(vocStart) {
+				vocStart = m.t
+			}
 		}
 
 		// Обновляем состояния для следующего шага лунного цикла
@@ -356,7 +428,10 @@ func (c *Calculator) ComputeCalendar(ctx context.Context, start, end time.Time, 
 			prevPlanetsState[id] = val
 		}
 	}
-	slices.SortFunc(events, func(a, b CalendarEvent) int {
+	// Стабильная сортировка: события с равной минутой сохраняют порядок добавления
+	// (суточные события, затем лунные по часам; noC — в час закрывающего аспекта),
+	// иначе отложенное закрытие дуг noC тасовало бы соседей с тем же временем.
+	slices.SortStableFunc(events, func(a, b CalendarEvent) int {
 		if a.Date < b.Date {
 			return -1
 		}

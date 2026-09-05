@@ -9,8 +9,9 @@ type CompactEvent struct {
 	Planets    []string `json:"p,omitempty"`
 	Aspect     string   `json:"a,omitempty"`
 	Degrees    []int    `json:"de,omitempty"`
-	Sign       *int     `json:"s,omitempty"`
+	Sign       *int    `json:"s,omitempty"`
 	ChangeSign string   `json:"chS,omitempty"`
+	VoidEnd    string   `json:"end,omitempty"`
 	Retro      *int     `json:"r,omitempty"`
 	Houses     []int    `json:"h,omitempty"` // полнознаковые дома (совмещены с p), только при заданном sign
 }
@@ -63,6 +64,7 @@ func toCompact(e CalendarEvent) CompactEvent {
 		Degrees:    e.Degrees,
 		Sign:       e.Sign,
 		ChangeSign: e.ChangeSign,
+		VoidEnd:    e.VoidEnd,
 	}
 	if e.Type == "r" {
 		val := 0

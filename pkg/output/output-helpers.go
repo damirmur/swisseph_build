@@ -8,6 +8,21 @@ import (
 	"github.com/damirmur/swisseph_build/pkg/astro"
 )
 
+// compactDayTime сводит момент tISO к "ЧЧ:ММ", если он в том же дне, что startISO,
+// иначе к "ЧЧ:ММ ДД.ММ". При ошибке парсинга возвращает tISO как есть.
+func compactDayTime(startISO, tISO string) string {
+	tStart, errStart := time.Parse("2006-01-02T15:04", startISO)
+	tEnd, errEnd := time.Parse("2006-01-02T15:04", tISO)
+	if errEnd != nil {
+		return tISO
+	}
+	if errStart == nil &&
+		tStart.Year() == tEnd.Year() && tStart.Month() == tEnd.Month() && tStart.Day() == tEnd.Day() {
+		return tEnd.Format("15:04")
+	}
+	return tEnd.Format("15:04 02.01")
+}
+
 // FormatCalendarEventText превращает сырое астрологическое событие в красивую строку для вывода в консоль или файлы.
 func FormatCalendarEventText(e astro.CalendarEvent) string {
 	timeStr := e.Date
@@ -23,25 +38,16 @@ func FormatCalendarEventText(e astro.CalendarEvent) string {
 	}
 
 	switch e.Type {
-	case "noC": // Луна без курса (Холостая)
-		untilStr := e.ChangeSign
-
-		// Парсим дату начала и дату окончания для сравнения
-		tStart, errStart := time.Parse("2006-01-02T15:04", e.Date)
-		tEnd, errEnd := time.Parse("2006-01-02T15:04", e.ChangeSign)
-
-		if errStart == nil && errEnd == nil {
-			// Проверяем, совпадают ли день, месяц и год
-			if tStart.Year() == tEnd.Year() && tStart.Month() == tEnd.Month() && tStart.Day() == tEnd.Day() {
-				// Тот же день: выводим только часы и минуты
-				untilStr = tEnd.Format("15:04")
-			} else {
-				// Разные дни: выводим время и дописываем дату в формате ЧЧ:ММ ДД.ММ
-				untilStr = tEnd.Format("15:04 02.01")
-			}
-		} else if errEnd == nil {
-			// Если дата старта почему-то не спарсилась, просто выводим полную дату окончания
-			untilStr = tEnd.Format("15:04 02.01")
+	case "noC": // Луна без курса (Холостая): старт — последний аспект,
+		// конец (VoidEnd) — первый аспект в новом знаке, ChangeSign — смена знака между ними
+		endStr := e.VoidEnd
+		if endStr == "" {
+			endStr = e.ChangeSign // фолбэк на старое поведение
+		}
+		untilStr := compactDayTime(e.Date, endStr)
+		if e.VoidEnd != "" && e.ChangeSign != "" {
+			return fmt.Sprintf("[%s] Луна без курса (холостая) до %s (смена знака %s)",
+				timeStr, untilStr, compactDayTime(e.Date, e.ChangeSign))
 		}
 
 		return fmt.Sprintf("[%s] Луна без курса (холостая) до %s", timeStr, untilStr)

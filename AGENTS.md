@@ -27,6 +27,7 @@ Go CLI that wraps the Swiss Ephemeris C library via cgo to compute astrological 
   This assumes `pkg/astro` sits under a repo named `swisseph_build` in `$GOPATH`/module dir at that depth. If the repo is moved or renamed, the build breaks — update both flags together.
 - `lib/libswe.a` (Linux static lib) and headers in `include/` and `lib/` are committed. `lib/libswe_linux.zip`/`libswe_win64.zip` are upstream distributions, not used at build time.
 - Ephemeris data files live in `ephe/` (gitignored; present locally). The calculator sets `swe_set_ephe_path` to the `ephe` dir next to the running binary (`GetExecutableDir()`), so a freshly built `./astro` must run from the repo root or with `ephe/` alongside it — otherwise Swiss Ephemeris silently falls back / fails to load files.
+- Thread affinity: libswe.a keeps the ephe path in state that does not survive Go goroutine migration between OS threads (cgo calls trigger migration; afterwards swe silently falls back to Moshier, flipping minute-boundary events run to run). Hence `NewCalculator` does `runtime.LockOSThread()` and `Close()` unlocks — every swe call must happen between them on the same goroutine; never call swe directly outside `Calculator`.
 
 ## Output format gotcha
 
