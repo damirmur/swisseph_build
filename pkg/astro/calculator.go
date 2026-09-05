@@ -9,6 +9,7 @@ import "C"
 
 import (
 	"context"
+	"runtime"
 	"sort"
 	"time"
 	"unsafe"
@@ -17,14 +18,25 @@ import (
 type Calculator struct {
 	ephePath string
 	cPath    *C.char
+	locked   bool
 }
 
 func NewCalculator(ephePath string) *Calculator {
+	// Привязываем горутину к текущему OS-потоку на всё время жизни калькулятора.
+	// Swiss Ephemeris (предсобранная libswe.a) хранит путь к эфемеридам и файловые
+	// дескрипторы в состоянии, не переживающем миграцию горутины между потоками:
+	// Go переносит горутину на другой поток прямо посреди расчёта (видно в strace
+	// по смене TID), после чего вызовы swe идут по путям по умолчанию и молча
+	// падают в менее точную встроенную теорию Moshier — отсюда плавающие ±1 мин
+	// (изредка больше) в событиях на границе минуты от прогона к прогону тем же
+	// бинарником. Close снимает привязку, вызывать его обязательно (везде defer).
+	runtime.LockOSThread()
 	cPath := C.CString(ephePath)
 	C.swe_set_ephe_path(cPath)
 	return &Calculator{
 		ephePath: ephePath,
 		cPath:    cPath,
+		locked:   true,
 	}
 }
 
@@ -34,6 +46,10 @@ func (c *Calculator) Close() {
 		c.cPath = nil
 	}
 	C.swe_close()
+	if c.locked {
+		c.locked = false
+		runtime.UnlockOSThread()
+	}
 }
 
 func GetPlanetName(id int) string {

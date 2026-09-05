@@ -166,6 +166,12 @@ func NewCalendarMeta() Meta {
 			Title:    "Время смены знака (для типа noC)",
 			Optional: true,
 		},
+		"end": {
+			Type:     "string",
+			Format:   "date-time",
+			Title:    "Окончание Луны без курса — первый аспект в новом знаке (для типа noC)",
+			Optional: true,
+		},
 		"r": {
 			Type:        "integer",
 			Title:       "Направление движения (для типа r): 0 = прямое, 1 = ретроградное",
