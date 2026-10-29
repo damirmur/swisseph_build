@@ -1,6 +1,7 @@
 package interactive
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +50,12 @@ func localIndex() *geo.Index {
 				continue
 			}
 			geoIdx = ix
+			log.Printf("geo: локальный геокодер GeoNames — %s (%d мест, %d имён)",
+				p, ix.Places(), ix.Keys())
 			return
+		}
+		if geoIdx == nil {
+			log.Printf("geo: локальный индекс не найден (искали %v) — работаем через сеть", geoIndexPaths())
 		}
 	})
 	return geoIdx
