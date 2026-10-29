@@ -5,6 +5,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/home/dmyr/swisseph_build
+Environment=PATH=/home/dmyr/bin/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/home/dmyr/swisseph_build/scripts/update-geo.sh
 TimeoutStartSec=1800
 Nice=10
