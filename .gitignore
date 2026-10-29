@@ -22,3 +22,5 @@
 # Игнорируем рабочую папку вывода
 /output/
 /astro3d.ru/
+geo/cities.idx
+geo/cities.idx.new

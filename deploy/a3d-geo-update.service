@@ -1,0 +1,10 @@
+[Unit]
+Description=astro3d: обновление локального геокодера GeoNames (раз в месяц)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/dmyr/swisseph_build
+ExecStart=/home/dmyr/swisseph_build/scripts/update-geo.sh
+TimeoutStartSec=1800
+Nice=10

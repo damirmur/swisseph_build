@@ -33,10 +33,6 @@ const (
 	nominatimURL = "https://nominatim.openstreetmap.org/search"
 	timeapiURL   = "https://www.timeapi.io/api/TimeZone/coordinate"
 	geoUserAgent = "picoclaw-astro-v2"
-
-	// Дефолтный фолбек, если Timezone API недоступен (например, Москва)
-	fallbackTimezone  = "Europe/Moscow"
-	fallbackUTCOffset = 3.0
 )
 
 func readLine(reader *bufio.Reader, prompt string) string {
@@ -159,11 +155,27 @@ func CollectData(allowEmptyDate bool) (*UserInput, error) {
 	return ui, nil
 }
 
-// GetGeoData запрашивает координаты и часовой пояс по названию населенного пункта онлайн.
+// GetGeoData определяет координаты и часовой пояс населённого пункта.
+//
+// Сначала — локальный индекс GeoNames (без сети). Сеть (Nominatim) остаётся
+// только фолбэком для мест, которых в дампе нет: деревень и новых посёлков.
+// Часовой пояс всегда считается на дату рождения, а не «на сейчас»; если пояс
+// определить не удалось, это ошибка, а не тихая подстановка Europe/Moscow
+// (раньше при отказе timeapi.io карта считалась по московскому времени).
 func GetGeoData(input *UserInput) (*GeoData, error) {
-	// 1. Поиск координат через OpenStreetMap Nominatim API
+	// 1. Локальный дамп GeoNames: координаты и IANA-таймзона в одной записи.
+	if gd, ok := localGeoData(input); ok {
+		return gd, nil
+	}
+
+	// 2. Кэш сетевых ответов: популярные названия не должны дёргать геокодер.
+	if gd, ok := netGeoCached(input.City); ok {
+		return gd, nil
+	}
+
+	// 3. Сетевой фолбэк: поиск координат через OpenStreetMap Nominatim.
 	escapedCity := url.QueryEscape(input.City)
-	geoReqURL := fmt.Sprintf("%s?q=%s&format=json&limit=1", nominatimURL, escapedCity)
+	geoReqURL := fmt.Sprintf("%s?q=%s&format=json&limit=5", nominatimURL, escapedCity)
 
 	req, err := http.NewRequest("GET", geoReqURL, nil)
 	if err != nil {
@@ -186,43 +198,55 @@ func GetGeoData(input *UserInput) (*GeoData, error) {
 		Lat         string `json:"lat"`
 		Lon         string `json:"lon"`
 		DisplayName string `json:"display_name"`
+		Class       string `json:"class"`
+		Type        string `json:"type"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
 		return nil, fmt.Errorf("ошибка парсинга геоданных: %v", err)
 	}
 
-	if len(results) == 0 {
+	// Nominatim ищет нечётко: на «Ззззъъъ» он отдаёт объект в Японии, на опечатку —
+	// случайный город. Берём только населённый пункт или административную границу,
+	// в названии которой реально есть введённое слово, иначе — «не найден».
+	chosen := -1
+	for i, r := range results {
+		if r.Class != "place" && r.Class != "boundary" {
+			continue
+		}
+		if !nameMatchesCity(input.City, r.DisplayName) {
+			continue
+		}
+		chosen = i
+		break
+	}
+	if chosen < 0 {
 		return nil, fmt.Errorf("населенный пункт %q не найден", input.City)
 	}
 
-	lat, err := strconv.ParseFloat(results[0].Lat, 64)
+	lat, err := strconv.ParseFloat(results[chosen].Lat, 64)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка преобразования широты: %v", err)
 	}
-	lon, err := strconv.ParseFloat(results[0].Lon, 64)
+	lon, err := strconv.ParseFloat(results[chosen].Lon, 64)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка преобразования долготы: %v", err)
 	}
 
-	// 2. Получение часового пояса по координатам через TimeAPI
-	if tz, ok := fetchTimezone(client, lat, lon); ok {
-		return &GeoData{
-			City:      input.City,
-			Latitude:  lat,
-			Longitude: lon,
-			Timezone:  tz.TimeZone,
-			UTCOffset: float64(tz.CurrentUtcOffset.Seconds) / 3600.0,
-		}, nil
+	// 4. Часовой пояс по координатам. Смещение берём на дату рождения, а не
+	// текущее: у мест с DST иначе карта уезжает на час.
+	tz, ok := fetchTimezone(client, lat, lon)
+	if !ok {
+		return nil, fmt.Errorf("не удалось определить часовой пояс для %q — повторите позже", input.City)
 	}
-
-	// Дефолтный фолбек на UTC+3 (например, Москва), если Timezone API недоступен
-	return &GeoData{
+	gd := &GeoData{
 		City:      input.City,
 		Latitude:  lat,
 		Longitude: lon,
-		Timezone:  fallbackTimezone,
-		UTCOffset: fallbackUTCOffset,
-	}, nil
+		Timezone:  tz.TimeZone,
+		UTCOffset: tzOffsetAt(tz.TimeZone, input.Date, input.Time),
+	}
+	netGeoStore(input.City, gd)
+	return gd, nil
 }
 
 // timezoneResult описывает ответ TimeAPI по координатам

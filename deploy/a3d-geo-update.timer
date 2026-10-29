@@ -1,0 +1,10 @@
+[Unit]
+Description=astro3d: обновление геокодера GeoNames (1-е число, 05:10 МСК)
+
+[Timer]
+OnCalendar=*-*-01 05:10:00
+Persistent=true
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target
