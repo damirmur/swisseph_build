@@ -3,6 +3,7 @@ package astro
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -10,9 +11,9 @@ import (
 // PlanetPoint — компактное положение планеты: [id, [longitude, speed]].
 // Исключает ремаппинг на фронтенде (совпадает со статическим форматом chart.out.planets).
 type PlanetPoint struct {
-	ID       int
+	ID        int
 	Longitude float64
-	Speed    float64
+	Speed     float64
 }
 
 // MarshalJSON реализует форму [id, [longitude, speed]].
@@ -24,11 +25,59 @@ func newPlanetPoint(id int, lon, speed float64) PlanetPoint {
 	return PlanetPoint{ID: id, Longitude: lon, Speed: speed}
 }
 
+// Balance — баланс стихий и крестов по планетам 0–9 (Солнце–Плутон).
+// Планеты за пределами десятки (узлы, Хирон, Лилит) не учитываются: так же
+// считает pie2D ($ad.plStatistic), иначе числа на сайте и в API разойдутся.
+type Balance struct {
+	Planets  []int                       `json:"planets"`
+	Elements map[string]int              `json:"elements"`
+	Crosses  map[string]int              `json:"crosses"`
+	Grid     map[string]map[string][]int `json:"grid"`
+}
+
+var balanceElements = [...]string{"fire", "earth", "air", "water"}
+var balanceCrosses = [...]string{"cardinal", "fixed", "mutable"}
+
+// ComputeBalance — стихия и крест по знаку: sign%4 и sign%3. Планеты 0–9,
+// порядок id — по возрастанию, пустые ячейки — пустые массивы (а не null).
+func ComputeBalance(planets []PlanetPoint) Balance {
+	b := Balance{
+		Planets:  []int{},
+		Elements: map[string]int{"fire": 0, "earth": 0, "air": 0, "water": 0},
+		Crosses:  map[string]int{"cardinal": 0, "fixed": 0, "mutable": 0},
+		Grid:     map[string]map[string][]int{},
+	}
+	for _, el := range balanceElements {
+		b.Grid[el] = map[string][]int{}
+		for _, cr := range balanceCrosses {
+			b.Grid[el][cr] = []int{}
+		}
+	}
+	for _, p := range planets {
+		if p.ID < 0 || p.ID > 9 {
+			continue
+		}
+		sign := int(p.Longitude/30) % 12
+		if sign < 0 {
+			sign += 12
+		}
+		el := balanceElements[sign%4]
+		cr := balanceCrosses[sign%3]
+		b.Planets = append(b.Planets, p.ID)
+		b.Elements[el]++
+		b.Crosses[cr]++
+		b.Grid[el][cr] = append(b.Grid[el][cr], p.ID)
+	}
+	sort.Ints(b.Planets)
+	return b
+}
+
 // NatalData — данные натальной карты в формате, совместимом со статическим chart.out.
 type NatalData struct {
 	Planets []PlanetPoint `json:"planets"`
-	Cusps   []float64    `json:"cusps"`
+	Cusps   []float64     `json:"cusps"`
 	Aspects []Aspect      `json:"aspects,omitempty"`
+	Balance Balance       `json:"balance"`
 }
 
 // PeriodData — данные периода в формате статического chartPeriod.out.
@@ -70,10 +119,10 @@ type Envelope struct {
 }
 
 const (
-	NatalSchema        = "astro3d.natal/v1"
-	PeriodSchema       = "astro3d.period/v1"
-	SynastrySchema     = "astro3d.synastry/v1"
-	NatalPeriodSchema  = "astro3d.natal_period/v1"
+	NatalSchema       = "astro3d.natal/v1"
+	PeriodSchema      = "astro3d.period/v1"
+	SynastrySchema    = "astro3d.synastry/v1"
+	NatalPeriodSchema = "astro3d.natal_period/v1"
 )
 
 // ToNatalData преобразует AstroResult натальной карты в компактный NatalData.
@@ -86,7 +135,7 @@ func ToNatalData(res *AstroResult) NatalData {
 	for _, h := range res.Houses {
 		cusps = append(cusps, h.Longitude)
 	}
-	return NatalData{Planets: planets, Cusps: cusps, Aspects: res.Aspects}
+	return NatalData{Planets: planets, Cusps: cusps, Aspects: res.Aspects, Balance: ComputeBalance(planets)}
 }
 
 // ToPeriodData преобразует AstroResult периода в компактный PeriodData.
@@ -118,7 +167,7 @@ func ToSynastryData(res *AstroResult) SynastryData {
 		for _, h := range res.HousesB {
 			cusps = append(cusps, h.Longitude)
 		}
-		chart2 = NatalData{Planets: planets, Cusps: cusps}
+		chart2 = NatalData{Planets: planets, Cusps: cusps, Balance: ComputeBalance(planets)}
 	}
 	return SynastryData{Chart1: chart1, Chart2: chart2, Aspects: res.Aspects}
 }

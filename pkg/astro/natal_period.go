@@ -346,7 +346,7 @@ func NewNatalPeriodMeta() Meta {
 		"natal": {
 			Type:        "object",
 			Title:       "Натальная карта",
-			Description: "Объект {planets:[[id,[lon,speed]]], cusps:[12]}",
+			Description: "Объект {planets:[[id,[lon,speed]]], cusps:[12], balance:{...}}",
 		},
 		"transits": {
 			Type:        "object",

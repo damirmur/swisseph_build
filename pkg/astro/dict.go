@@ -53,11 +53,11 @@ var AspectDict = map[string]string{
 
 // EventTypeDict — тип события календаря -> описание.
 var EventTypeDict = map[string]string{
-	"exA": "Exact aspect between planets",
+	"exA":  "Exact aspect between planets",
 	"lunD": "Lunar day (Moon enters a new lunar day)",
-	"chS": "Planet changes zodiac sign (ingress)",
-	"noC": "Moon void of course",
-	"r":   "Direction change (direct <-> retrograde)",
+	"chS":  "Planet changes zodiac sign (ingress)",
+	"noC":  "Moon void of course",
+	"r":    "Direction change (direct <-> retrograde)",
 }
 
 // HouseDict — код системы домов -> английское имя.
@@ -90,8 +90,8 @@ type MetaField struct {
 	Format      string            `json:"format,omitempty"`
 	Title       string            `json:"title"`
 	Description string            `json:"description,omitempty"`
-	Ref         string            `json:"ref,omitempty"`   // ссылка на словарь в meta для расшифровки кодов
-	Enum        map[string]string `json:"enum,omitempty"`  // прямая расшифровка значений
+	Ref         string            `json:"ref,omitempty"`  // ссылка на словарь в meta для расшифровки кодов
+	Enum        map[string]string `json:"enum,omitempty"` // прямая расшифровка значений
 	Optional    bool              `json:"optional,omitempty"`
 	Example     string            `json:"example,omitempty"`
 }
@@ -100,13 +100,13 @@ type MetaField struct {
 // Единственный источник истины для кодов планет/знаков/аспектов/домов/типов
 // и описания полей структуры данных (fields) и query-параметров (params).
 type Meta struct {
-	Planets map[string]string   `json:"planets"`
-	Signs   map[string]string   `json:"signs"`
-	Aspects map[string]string   `json:"aspects"`
-	Houses  map[string]string   `json:"houses"`
-	Types   map[string]string   `json:"types,omitempty"`
+	Planets map[string]string    `json:"planets"`
+	Signs   map[string]string    `json:"signs"`
+	Aspects map[string]string    `json:"aspects"`
+	Houses  map[string]string    `json:"houses"`
+	Types   map[string]string    `json:"types,omitempty"`
 	Fields  map[string]MetaField `json:"fields"`
-	Params  map[string]string   `json:"params,omitempty"` // описание query-параметров API
+	Params  map[string]string    `json:"params,omitempty"` // описание query-параметров API
 }
 
 // NewAstroMeta — базовый конструктор meta с общими словарями.
@@ -125,10 +125,10 @@ func NewAstroMeta(fields map[string]MetaField, params map[string]string) Meta {
 func NewCalendarMeta() Meta {
 	return NewAstroMeta(map[string]MetaField{
 		"d": {
-			Type:     "string",
-			Format:   "date-time",
-			Title:    "Дата/время события (ISO-8601, UTC)",
-			Example:  "2026-01-01T13:33:00Z",
+			Type:    "string",
+			Format:  "date-time",
+			Title:   "Дата/время события (ISO-8601, UTC)",
+			Example: "2026-01-01T13:33:00Z",
 		},
 		"t": {
 			Type:  "string",
@@ -173,10 +173,10 @@ func NewCalendarMeta() Meta {
 			Optional: true,
 		},
 		"r": {
-			Type:        "integer",
-			Title:       "Направление движения (для типа r): 0 = прямое, 1 = ретроградное",
-			Enum:        RetroDict,
-			Optional:    true,
+			Type:     "integer",
+			Title:    "Направление движения (для типа r): 0 = прямое, 1 = ретроградное",
+			Enum:     RetroDict,
+			Optional: true,
 		},
 		"h": {
 			Type:        "array",
@@ -212,16 +212,21 @@ func NewNatalMeta() Meta {
 			Description: "Массив из 12 долгот куспидов домов (по порядку 1-12)",
 			Ref:         "houses",
 		},
+		"balance": {
+			Type:        "object",
+			Title:       "Баланс стихий и крестов",
+			Description: "Объект {planets:[id], elements:{fire,earth,air,water}, crosses:{cardinal,fixed,mutable}, grid:{element:{cross:[id]}}}. Учитываются планеты 0–9 (Солнце–Плутон)",
+		},
 	}, map[string]string{
-		"city":     "Город для геокодирования (альтернатива lat/lon)",
-		"lat":      "Широта (десятичные градусы)",
-		"lon":      "Долгота (десятичные градусы)",
-		"date":     "Дата/время события (ISO-8601 или Y-M-D H:M:S)",
-		"hsys":     "Система домов: P,K,O,W,R,C,E,V,X,H,T,B,G,M (по умолчанию P)",
-		"tz":       "Часовой пояс IANA (необязательно, определяется по city)",
-		"planets":  "Фильтр планет (коды через запятую)",
-		"aspects":  "Фильтр аспектов (углы через запятую)",
-		"max_orb":  "Максимальный орбис аспекта (градусы)",
+		"city":    "Город для геокодирования (альтернатива lat/lon)",
+		"lat":     "Широта (десятичные градусы)",
+		"lon":     "Долгота (десятичные градусы)",
+		"date":    "Дата/время события (ISO-8601 или Y-M-D H:M:S)",
+		"hsys":    "Система домов: P,K,O,W,R,C,E,V,X,H,T,B,G,M (по умолчанию P)",
+		"tz":      "Часовой пояс IANA (необязательно, определяется по city)",
+		"planets": "Фильтр планет (коды через запятую)",
+		"aspects": "Фильтр аспектов (углы через запятую)",
+		"max_orb": "Максимальный орбис аспекта (градусы)",
 	})
 }
 
@@ -247,17 +252,17 @@ func NewPeriodMeta() Meta {
 			Ref:         "planets",
 		},
 	}, map[string]string{
-		"city":     "Город для геокодирования и часового пояса",
-		"lat":      "Широта (десятичные градусы)",
-		"lon":      "Долгота (десятичные градусы)",
-		"date":     "Дата/время начала периода (ISO-8601 или Y-M-D H:M:S)",
-		"end":      "Дата/время конца периода (ISO-8601)",
-		"step":     "Шаг между срезами в часах (по умолчанию 24)",
-		"hsys":     "Система домов (по умолчанию P)",
-		"tz":       "Часовой пояс IANA (необязательно)",
-		"planets":  "Фильтр планет (коды через запятую)",
-		"aspects":  "Фильтр аспектов (углы через запятую)",
-		"max_orb":  "Максимальный орбис аспекта (градусы)",
+		"city":    "Город для геокодирования и часового пояса",
+		"lat":     "Широта (десятичные градусы)",
+		"lon":     "Долгота (десятичные градусы)",
+		"date":    "Дата/время начала периода (ISO-8601 или Y-M-D H:M:S)",
+		"end":     "Дата/время конца периода (ISO-8601)",
+		"step":    "Шаг между срезами в часах (по умолчанию 24)",
+		"hsys":    "Система домов (по умолчанию P)",
+		"tz":      "Часовой пояс IANA (необязательно)",
+		"planets": "Фильтр планет (коды через запятую)",
+		"aspects": "Фильтр аспектов (углы через запятую)",
+		"max_orb": "Максимальный орбис аспекта (градусы)",
 	})
 }
 
@@ -267,12 +272,12 @@ func NewSynastryMeta() Meta {
 		"chart1": {
 			Type:        "object",
 			Title:       "Натальная карта первого объекта",
-			Description: "Объект {planets:[[id,[lon,speed]]], cusps:[12]}",
+			Description: "Объект {planets:[[id,[lon,speed]]], cusps:[12], balance:{...}}",
 		},
 		"chart2": {
 			Type:        "object",
 			Title:       "Натальная карта второго объекта",
-			Description: "Объект {planets:[[id,[lon,speed]]], cusps:[12]}",
+			Description: "Объект {planets:[[id,[lon,speed]]], cusps:[12], balance:{...}}",
 		},
 		"aspects": {
 			Type:        "array",
@@ -281,17 +286,17 @@ func NewSynastryMeta() Meta {
 			Ref:         "aspects",
 		},
 	}, map[string]string{
-		"city":      "Город первого объекта (или общий, если не задан city2)",
-		"city2":     "Город второго объекта",
-		"lat":       "Широта первого объекта",
-		"lon":       "Долгота первого объекта",
-		"lat2":      "Широта второго объекта",
-		"lon2":      "Долгота второго объекта",
-		"date":      "Дата/время первого объекта (ISO-8601 или Y-M-D H:M:S)",
-		"date2":     "Дата/время второго объекта",
-		"hsys":      "Система домов (по умолчанию P)",
-		"planets":   "Фильтр планет (коды через запятую)",
-		"aspects":   "Фильтр аспектов (углы через запятую)",
-		"max_orb":   "Максимальный орбис аспекта (градусы)",
+		"city":    "Город первого объекта (или общий, если не задан city2)",
+		"city2":   "Город второго объекта",
+		"lat":     "Широта первого объекта",
+		"lon":     "Долгота первого объекта",
+		"lat2":    "Широта второго объекта",
+		"lon2":    "Долгота второго объекта",
+		"date":    "Дата/время первого объекта (ISO-8601 или Y-M-D H:M:S)",
+		"date2":   "Дата/время второго объекта",
+		"hsys":    "Система домов (по умолчанию P)",
+		"planets": "Фильтр планет (коды через запятую)",
+		"aspects": "Фильтр аспектов (углы через запятую)",
+		"max_orb": "Максимальный орбис аспекта (градусы)",
 	})
 }
