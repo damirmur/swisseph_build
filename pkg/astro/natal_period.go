@@ -31,7 +31,7 @@ func (p TransitPoint) MarshalJSON() ([]byte, error) {
 
 // TransitSeriesData — ряды транзитов по срезам периода.
 type TransitSeriesData struct {
-	Date    []string                `json:"date"`
+	Date    []string                  `json:"date"`
 	Planets map[string][]TransitPoint `json:"planets"` // id -> [ [lon,speed,house], ... ] по срезам
 }
 
@@ -132,7 +132,30 @@ type pairState struct {
 	hasMin    bool
 	transitID int
 	natalID   int
+	natalLon  float64
 	cfg       AspectConfig
+}
+
+// findExactAspectToNatal уточняет момент точного аспекта транзитной планеты
+// к неподвижной натальной долготе около approx. Окно поиска — один шаг
+// периода вокруг ближайшего среза; минимум |орб| ищется золотым сечением
+// (точность заведомо выше минуты). Окно не обрезается границами периода:
+// так видно, что «точный» аспект на краю на самом деле был за его пределами.
+func findExactAspectToNatal(transitID int, natalLon, angle float64, approx time.Time,
+	halfWindow time.Duration) (time.Time, float64, error) {
+	lo := approx.Add(-halfWindow)
+	hi := approx.Add(halfWindow)
+	distance := func(t time.Time) float64 {
+		return math.Abs(getShortestDiff(getPlanetLon(transitID, t), natalLon) - angle)
+	}
+	if !hi.After(lo) {
+		return approx, distance(approx), nil
+	}
+	exact, err := goldenSectionSearch(lo, hi, distance)
+	if err != nil {
+		return approx, distance(approx), err
+	}
+	return exact, distance(exact), nil
 }
 
 // ComputeNatalPeriod считает натальную карту и транзиты за период,
@@ -177,8 +200,9 @@ func (c *Calculator) ComputeNatalPeriod(ctx context.Context, natalTime time.Time
 	states := map[natalPeriodPairKey]*pairState{}
 	var events []TransitAspectEvent
 
+	stepDuration := time.Duration(stepHours) * time.Hour
 	sliceIdx := 0
-	for currentTime := start; !currentTime.After(end); currentTime = currentTime.Add(time.Duration(stepHours) * time.Hour) {
+	for currentTime := start; !currentTime.After(end); currentTime = currentTime.Add(stepDuration) {
 		// Позиции транзитных планет на этот срез.
 		var xx [6]C.double
 		var serr [256]C.char
@@ -210,7 +234,7 @@ func (c *Calculator) ComputeNatalPeriod(ctx context.Context, natalTime time.Time
 					key := natalPeriodPairKey{Transit: tid, Natal: nid, Angle: cfg.Angle}
 					st := states[key]
 					if st == nil {
-						st = &pairState{transitID: tid, natalID: nid, cfg: cfg}
+						st = &pairState{transitID: tid, natalID: nid, natalLon: ln, cfg: cfg}
 						states[key] = st
 					}
 					if sliceIdx == 0 {
@@ -252,9 +276,20 @@ func (c *Calculator) ComputeNatalPeriod(ctx context.Context, natalTime time.Time
 							f = (maxOrb - st.prevD) / (d - st.prevD)
 						}
 						xt := st.prevTime.Add(time.Duration(f * float64(currentTime.Sub(st.prevTime))))
-						// Точный аспект — в момент минимума орба эпизода.
+						// Точный аспект — момент минимума орба эпизода.
+						// Срез даёт лишь приближение (шаг периода), поэтому
+						// уточняем время до минуты золотым сечением.
 						if st.hasMin {
-							emitTransitEvent(&events, st.minTime, tid, nid, cfg, st.minD, "exact", st.minLonT, outLoc)
+							exactTime, exactOrb, err := findExactAspectToNatal(tid, ln, cfg.Angle,
+								st.minTime, stepDuration)
+							if err != nil {
+								exactTime, exactOrb = st.minTime, st.minD
+							}
+							// На краях периода минимум орба может быть снаружи:
+							// это не «точный аспект за период» — не показываем.
+							if !exactTime.Before(start) && !exactTime.After(end) {
+								emitTransitEvent(&events, exactTime, tid, nid, cfg, exactOrb, "exact", st.minLonT, outLoc)
+							}
 						}
 						emitTransitEvent(&events, xt, tid, nid, cfg, maxOrb, "leave", interpLon(st.prevLonT, lt, f), outLoc)
 						st.inside = false
@@ -274,7 +309,14 @@ func (c *Calculator) ComputeNatalPeriod(ctx context.Context, natalTime time.Time
 	// Для эпизодов, не закрывшихся к концу периода, фиксируем точный аспект.
 	for _, st := range states {
 		if st.inside && st.hasMin {
-			emitTransitEvent(&events, st.minTime, st.transitID, st.natalID, st.cfg, st.minD, "exact", st.minLonT, outLoc)
+			exactTime, exactOrb, err := findExactAspectToNatal(st.transitID, st.natalLon, st.cfg.Angle,
+				st.minTime, stepDuration)
+			if err != nil {
+				exactTime, exactOrb = st.minTime, st.minD
+			}
+			if !exactTime.Before(start) && !exactTime.After(end) {
+				emitTransitEvent(&events, exactTime, st.transitID, st.natalID, st.cfg, exactOrb, "exact", st.minLonT, outLoc)
+			}
 		}
 	}
 
@@ -318,18 +360,18 @@ func NewNatalPeriodMeta() Meta {
 			Ref:         "aspects",
 		},
 	}, map[string]string{
-		"city":     "Город натальной карты и часовой пояс периода (альтернатива lat/lon)",
-		"lat":      "Широта натальной карты",
-		"lon":      "Долгота натальной карты",
-		"date":     "Дата/время натальной карты (ISO-8601 или Y-M-D H:M:S)",
-		"time":     "Время натальной карты (HH:MM, по умолчанию 12:00)",
-		"hsys":     "Система домов (по умолчанию P)",
-		"tz":       "Часовой пояс IANA (необязательно)",
-		"start":    "Начало периода (ISO-8601); по умолчанию — текущий момент",
-		"end":      "Конец периода (ISO-8601); по умолчанию — +1 месяц от начала",
-		"step":     "Шаг между срезами в часах (по умолчанию 24)",
-		"planets":  "Список транзитных планет (коды через запятую); по умолчанию 0-10,12",
-		"max_orb":  "Орб аспекта в градусах (по умолчанию 1)",
-		"aspects":  "Фильтр углов аспектов (через запятую); по умолчанию мажорные 0,60,90,120,180",
+		"city":    "Город натальной карты и часовой пояс периода (альтернатива lat/lon)",
+		"lat":     "Широта натальной карты",
+		"lon":     "Долгота натальной карты",
+		"date":    "Дата/время натальной карты (ISO-8601 или Y-M-D H:M:S)",
+		"time":    "Время натальной карты (HH:MM, по умолчанию 12:00)",
+		"hsys":    "Система домов (по умолчанию P)",
+		"tz":      "Часовой пояс IANA (необязательно)",
+		"start":   "Начало периода (ISO-8601); по умолчанию — текущий момент",
+		"end":     "Конец периода (ISO-8601); по умолчанию — +1 месяц от начала",
+		"step":    "Шаг между срезами в часах (по умолчанию 24)",
+		"planets": "Список транзитных планет (коды через запятую); по умолчанию 0-10,12",
+		"max_orb": "Орб аспекта в градусах (по умолчанию 1)",
+		"aspects": "Фильтр углов аспектов (через запятую); по умолчанию мажорные 0,60,90,120,180",
 	})
 }

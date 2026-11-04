@@ -12,7 +12,8 @@ Go CLI that wraps the Swiss Ephemeris C library via cgo to compute astrological 
 - Tests: `go test ./tests/ -v`. The `tests/` package holds golden tests with the reference data embedded directly in the files:
   - `calendar_test.go` regenerates the July-2026 event calendar (UTC+0) and compares count + event list against the embedded reference `output_data/calendar_1785807837.text`, printing detailed discrepancies on mismatch.
   - `natal_test.go` regenerates the natal chart for 1971-11-19 19:43 UTC (51.77N, 55.10E, Placidus) and compares the text render against the embedded reference `output_data/natal_1785812687.text`.
-  - Both need the local `ephe/` data — they skip if absent. Other packages (`pkg/astro`, `pkg/output`) have no tests.
+  - `natal_period_test.go` проверяет, что `exact`-события `/api/v1/natal-period` уточнены по эфемеридам (орб в момент события ≈ 0), а не привязаны к шагу периода.
+  - Both golden tests need the local `ephe/` data — they skip if absent. Other packages (`pkg/astro`, `pkg/output`) have no tests.
 
 ## Calendar hot path — don't "optimize" blindly
 
@@ -26,7 +27,7 @@ Go CLI that wraps the Swiss Ephemeris C library via cgo to compute astrological 
   `#cgo CFLAGS: -I${SRCDIR}/../../../swisseph_build/include` and `LDFLAGS: -L${SRCDIR}/../../../swisseph_build/lib -lswe -lm`.
   This assumes `pkg/astro` sits under a repo named `swisseph_build` in `$GOPATH`/module dir at that depth. If the repo is moved or renamed, the build breaks — update both flags together.
 - `lib/libswe.a` (Linux static lib) **в git не хранится** — он собирается локально из `lib/libswe_linux.zip` (файл остаётся на диске и нужен линкеру: `-lswe`). Заголовки в `include/` и `lib/` — в git. `lib/libswe_linux.zip`/`libswe_win64.zip` — upstream-дистрибутивы, вход для сборки, а не её выход.
-- Ephemeris data files live in `ephe/` (gitignored; present locally). The calculator sets `swe_set_ephe_path` to the `ephe` dir next to the running binary (`GetExecutableDir()`), so a freshly built `./astro` must run from the repo root or with `ephe/` alongside it — otherwise Swiss Ephemeris silently falls back / fails to load files.
+- Ephemeris data files live in `ephe/` (gitignored; present locally). В этой раскладке `ephe/` — симлинк на `/home/dmyr/app/data/ephe` (единый каталог для astro-core и CLI). The calculator sets `swe_set_ephe_path` to the `ephe` dir next to the running binary (`GetExecutableDir()`), so a freshly built `./astro` must run from the repo root or with `ephe/` alongside it — otherwise Swiss Ephemeris silently falls back / fails to load files.
 - Thread affinity: libswe.a keeps the ephe path in state that does not survive Go goroutine migration between OS threads (cgo calls trigger migration; afterwards swe silently falls back to Moshier, flipping minute-boundary events run to run). Hence `NewCalculator` does `runtime.LockOSThread()` and `Close()` unlocks — every swe call must happen between them on the same goroutine; never call swe directly outside `Calculator`.
 
 ## Output format gotcha
