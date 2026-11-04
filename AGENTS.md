@@ -13,6 +13,7 @@ Go CLI that wraps the Swiss Ephemeris C library via cgo to compute astrological 
   - `calendar_test.go` regenerates the July-2026 event calendar (UTC+0) and compares count + event list against the embedded reference `output_data/calendar_1785807837.text`, printing detailed discrepancies on mismatch.
   - `natal_test.go` regenerates the natal chart for 1971-11-19 19:43 UTC (51.77N, 55.10E, Placidus) and compares the text render against the embedded reference `output_data/natal_1785812687.text`.
   - `natal_period_test.go` проверяет, что `exact`-события `/api/v1/natal-period` уточнены по эфемеридам (орб в момент события ≈ 0), а не привязаны к шагу периода.
+  - `returns_test.go` проверяет соляры/лунары: `prev < ref < next`, периоды обращения (Солнце ~365 дн., Луна ~27.3 дн.) и что в момент возврата планета стоит ровно на натальной долготе (допуск 5e-4° — `dateToJulian` округляет до секунды, Луна идёт ~0.00015°/с); отдельный случай — `ref` ровно в момент возврата.
   - Both golden tests need the local `ephe/` data — they skip if absent. Other packages (`pkg/astro`, `pkg/output`) have no tests.
 
 ## Calendar hot path — don't "optimize" blindly
