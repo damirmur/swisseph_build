@@ -32,7 +32,7 @@ func geoIndexPaths() []string {
 		out = append(out, filepath.Join(filepath.Dir(exe), "geo", "cities.idx"))
 	}
 	out = append(out,
-		"/home/dmyr/swisseph_build/geo/cities.idx",
+		"/home/dmyr/app/data/geo/cities.idx",
 		"geo/cities.idx",
 	)
 	return out
