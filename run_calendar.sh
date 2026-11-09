@@ -40,6 +40,14 @@ CURRENT_MONTH="$CLEAN_MONTH"
 # Определяем имя месяца для красивого вывода
 MONTH_NAME=$(date -d "2000-$CURRENT_MONTH-01" +%B 2>/dev/null || date +%B)
 
+# --- СТАТИЧЕСКАЯ БИБЛИОТЕКА ---
+# libswe.a не хранится в git: собираем её из third_party/swisseph, если её нет
+# или исходники новее (свежий клон, обновление вендоренной версии).
+if [ ! -f "./lib/libswe.a" ] || [ -n "$(find third_party/swisseph -name '*.c' -newer ./lib/libswe.a -print -quit)" ]; then
+    echo "Сборка lib/libswe.a из third_party/swisseph..."
+    ./scripts/build-libswe.sh || exit 1
+fi
+
 # --- ПРОВЕРКА АКТУАЛЬНОСТИ БИНАРНИКА ---
 NEED_BUILD=false
 
