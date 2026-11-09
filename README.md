@@ -2,6 +2,25 @@
 
 Программа для расчета астрологических данных.
 
+## Сборка
+
+```bash
+./scripts/build-libswe.sh                      # lib/libswe.a из third_party/swisseph
+go build -o astro ./cmd/astro/main.go          # cgo, CGO_ENABLED=1
+go test ./tests/ -v                            # эталоны calendar/natal/period/returns
+```
+
+Нужны `gcc`, `ar` и файлы эфемерид в `ephe/` (симлинк на `/home/dmyr/app/data/ephe`).
+Статическая библиотека `lib/libswe.a` в git не хранится: она собирается из
+вендоренных исходников Swiss Ephemeris 2.10.03 (`third_party/swisseph`, тег
+`v2.10.3final`). Windows-сборка не поддерживается — весь стек Linux.
+
+## Лицензия
+
+Репозиторий распространяется под **AGPL-3.0** (см. [`LICENSE`](LICENSE));
+Swiss Ephemeris — AGPL-3.0 или Professional, здесь выбран AGPL-3.0. Копирайты,
+версия upstream и Corresponding Source — в [`NOTICE`](NOTICE).
+
 ## Основные параметры (глобальные)
 Эти флаги можно использовать с любой командой:
 

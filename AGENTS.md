@@ -7,7 +7,7 @@ Go CLI that wraps the Swiss Ephemeris C library via cgo to compute astrological 
 - There is exactly one entrypoint: `cmd/astro/main.go`. Build the whole app with:
   `go build -o astro ./cmd/astro/main.go`
 - `run_calendar.sh` auto-rebuilds if any `.go` file is newer than `./astro`, then runs the `calendar` command.
-- Requires cgo. Only builds with the committed static library and headers (see cgo quirk below). `CGO_ENABLED=1`.
+- Requires cgo. `CGO_ENABLED=1`; before the first build run `./scripts/build-libswe.sh` — it produces `lib/libswe.a` from the vendored sources in `third_party/swisseph` (see cgo quirk below).
 - No lint/typecheck/CI config. Fastest verification is `go build -o /tmp/astro ./cmd/astro/main.go` plus `go vet ./...`.
 - Tests: `go test ./tests/ -v`. The `tests/` package holds golden tests with the reference data embedded directly in the files:
   - `calendar_test.go` regenerates the July-2026 event calendar (UTC+0) and compares count + event list against the embedded reference `output_data/calendar_1785807837.text`, printing detailed discrepancies on mismatch.
@@ -27,7 +27,7 @@ Go CLI that wraps the Swiss Ephemeris C library via cgo to compute astrological 
 - `pkg/astro/calculator.go` declares cgo imports using a **hard-coded, relative** path:
   `#cgo CFLAGS: -I${SRCDIR}/../../../swisseph_build/include` and `LDFLAGS: -L${SRCDIR}/../../../swisseph_build/lib -lswe -lm`.
   This assumes `pkg/astro` sits under a repo named `swisseph_build` in `$GOPATH`/module dir at that depth. If the repo is moved or renamed, the build breaks — update both flags together.
-- `lib/libswe.a` (Linux static lib) **в git не хранится** — он собирается локально из `lib/libswe_linux.zip` (файл остаётся на диске и нужен линкеру: `-lswe`). Заголовки в `include/` и `lib/` — в git. `lib/libswe_linux.zip`/`libswe_win64.zip` — upstream-дистрибутивы, вход для сборки, а не её выход.
+- `lib/libswe.a` (Linux static lib) **в git не хранится** — он собирается из вендоренных исходников: `./scripts/build-libswe.sh` (компилирует 9 файлов из `third_party/swisseph` с `-O2 -Wall -fPIC` и `-Iinclude`, как upstream-`SWEOBJ`). Upstream-zip-ов в репозитории больше нет: AGPL требует Corresponding Source, а не готовый бинарник. Заголовки — только в `include/`, они побайтово совпадают с тегом `v2.10.3final`; копий в `lib/` нет. Windows-сборка не поддерживается (весь стек Linux, cgo `-lswe`), `libswe_win64.zip` удалён.
 - Ephemeris data files live in `ephe/` (gitignored; present locally). В этой раскладке `ephe/` — симлинк на `/home/dmyr/app/data/ephe` (единый каталог для astro-core и CLI). The calculator sets `swe_set_ephe_path` to the `ephe` dir next to the running binary (`GetExecutableDir()`), so a freshly built `./astro` must run from the repo root or with `ephe/` alongside it — otherwise Swiss Ephemeris silently falls back / fails to load files.
 - Thread affinity: libswe.a keeps the ephe path in state that does not survive Go goroutine migration between OS threads (cgo calls trigger migration; afterwards swe silently falls back to Moshier, flipping minute-boundary events run to run). Hence `NewCalculator` does `runtime.LockOSThread()` and `Close()` unlocks — every swe call must happen between them on the same goroutine; never call swe directly outside `Calculator`.
 
@@ -48,4 +48,10 @@ Go CLI that wraps the Swiss Ephemeris C library via cgo to compute astrological 
 
 - default output dir `output_data/` (gitignored), created relative to executable dir; storage cleanup runs on it.
 - `do_push.sh` just pushes to `origin/main`.
-- The committed `astro` binary is tracked in git; rebuilds modify it (visible in `git status`).
+- `astro` is gitignored, not tracked: a local rebuild only changes an untracked file.
+
+## Лицензия
+
+- Репозиторий — **AGPL-3.0** (`LICENSE`). Swiss Ephemeris — AGPL-3.0 или Professional, выбран AGPL-3.0; копирайты, версия upstream и Corresponding Source — в `NOTICE`, условия — в `third_party/swisseph/LICENSE`.
+- Любой бинарник, который мы распространяем (в том числе будущий wasm), должен сопровождаться исходниками: не возвращать в git готовые `libswe*.zip` и не собирать библиотеку из чего-то, кроме `third_party/swisseph`.
+- Версия SE фиксируется тегом `v2.10.3final` (commit `af9823f`); при обновлении менять одновременно `third_party/swisseph`, `include/*.h`, `NOTICE` и прогонять `tests/` — минуты событий на границе зависят от версии библиотеки.

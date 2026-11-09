@@ -1,0 +1,49 @@
+# NOTICE — лицензии и происхождение кода
+
+## Лицензия репозитория
+
+Copyright (C) 2023–2026 Муратов Дамир Юсифович.
+
+Весь код в этом репозитории распространяется под **GNU Affero General Public
+License v3.0** — полный текст в [`LICENSE`](LICENSE). Это включает Go-код
+движка (`pkg/astro`, `cmd/astro`), вендоренные исходники Swiss Ephemeris
+(`third_party/swisseph`) и скрипты сборки.
+
+## Swiss Ephemeris
+
+Copyright (C) 1997–2021 Astrodienst AG, Switzerland. All rights reserved.
+Authors: Dieter Koch and Alois Treindl.
+
+- Исходники: `third_party/swisseph/`
+- Upstream: <https://github.com/aloistr/swisseph>
+- Тег: `v2.10.3final`, commit `af9823fe7b06ffefe3d3968fdc5680be8b5eec5f`
+- `SE_VERSION`: `2.10.03`
+- Условия двойного лицензирования: `third_party/swisseph/LICENSE`
+- Выбранная лицензия: **AGPL-3.0** (`third_party/swisseph/agpl-3.0.txt`)
+
+Файлы эфемерид (`sepl_*.se1`, `semo_*.se1`, `seas_*.se1`) — данные Astrodienst,
+распространяются на тех же условиях. В репозитории они не хранятся; в этой
+раскладке лежат в `/home/dmyr/app/data/ephe` (симлинк `ephe/`).
+
+## Corresponding Source
+
+Полный исходный код, необходимый для сборки библиотеки и движка, находится
+в этом репозитории:
+
+- `third_party/swisseph/*.c` — C-библиотека (9 файлов из upstream-`SWEOBJ`);
+- `include/*.h` — заголовки, побайтово совпадают с тем же тегом;
+- `pkg/astro`, `cmd/astro` — логика движка;
+- `scripts/build-libswe.sh` — сборка `lib/libswe.a`.
+
+Сборка:
+
+```bash
+./scripts/build-libswe.sh
+go build -o astro ./cmd/astro/main.go
+```
+
+## Source offer (§13 AGPL)
+
+Сервис <https://astro3d.ru> использует этот движок по сети. Исходный код
+доступен по адресу <https://github.com/damirmur/swisseph_build>; версия,
+соответствующая развёрнутому сервису, фиксируется коммитом в задаче деплоя.

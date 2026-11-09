@@ -11,7 +11,7 @@
 *.test
 *.bin
 *.exe
-# upstream-дистрибутивы libswe_*.zip в lib/ остаются в git: это вход для сборки, а не её выход
+# libswe.a собирается из third_party/swisseph (./scripts/build-libswe.sh), в git его нет
 
 # Игнорируем файлы точных эфемерид (они скачиваются на VPS один раз)
 /ephe
